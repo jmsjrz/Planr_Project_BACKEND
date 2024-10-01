@@ -1,0 +1,26 @@
+# Ignorer l'environnement virtuel
+venv/
+
+# Ignorer les fichiers de l'IDE
+.vscode/
+.idea/
+
+# Ignorer les fichiers Python compilés
+*.pyc
+__pycache__/ 
+
+# Ignorer les paramètres de développement locaux
+local_settings.py
+
+# Ignorer les fichiers média et statiques
+media/
+static/
+
+# Ignorer les fichiers journaux
+*.log
+
+# Ignorer le fichier des variables d'environnement
+.env
+
+# Ignorer les fichiers de migration
+migrations/
