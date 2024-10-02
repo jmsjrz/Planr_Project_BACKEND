@@ -5,10 +5,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
-from rest_framework_simplejwt.tokens import RefreshToken  # Import déplacé en haut
+from rest_framework_simplejwt.tokens import RefreshToken
+from datetime import timedelta
 
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def register(request):
+    """
+    Gère l'inscription d'un utilisateur par e-mail ou numéro de téléphone, envoie un OTP pour vérification.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant les données d'inscription.
+
+    Returns:
+        JsonResponse: Réponse JSON indiquant le statut de l'inscription et l'envoi de l'OTP.
+    """
     if request.method == 'POST':
         data = request.POST
         email = data.get('email')
@@ -59,8 +69,17 @@ def register(request):
         return JsonResponse({'error': 'Vous devez fournir un e-mail ou un numéro de téléphone'}, status=400)
 
 
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def verify_email_otp(request):
+    """
+    Vérifie le code OTP envoyé à l'e-mail de l'utilisateur pour activer son compte.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant l'e-mail et l'OTP.
+
+    Returns:
+        JsonResponse: Réponse JSON indiquant le résultat de la vérification.
+    """
     if request.method == 'POST':
         email = request.POST.get('email')
         otp = request.POST.get('otp')
@@ -77,8 +96,17 @@ def verify_email_otp(request):
         return JsonResponse({'error': 'Le code OTP est invalide ou expiré'}, status=400)
 
 
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def verify_otp(request):
+    """
+    Vérifie le code OTP envoyé par SMS à l'utilisateur pour activer son compte.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant le numéro de téléphone et l'OTP.
+
+    Returns:
+        JsonResponse: Réponse JSON indiquant le résultat de la vérification.
+    """
     if request.method == 'POST':
         phone_number = request.POST.get('phone_number')
         otp = request.POST.get('otp')
@@ -105,8 +133,17 @@ def verify_otp(request):
         return JsonResponse({'error': 'Le code OTP est invalide ou expiré'}, status=400)
 
 
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def login(request):
+    """
+    Gère la connexion de l'utilisateur via e-mail et mot de passe.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant l'e-mail et le mot de passe.
+
+    Returns:
+        JsonResponse: Réponse JSON avec les jetons d'accès JWT si la connexion réussit.
+    """
     if request.method == 'POST':
         email = request.POST.get('email')
         password = request.POST.get('password')
@@ -117,7 +154,13 @@ def login(request):
 
         user = get_object_or_404(User, email=email)  # Utilisation de get_object_or_404
 
+        if user.is_account_locked():
+            return JsonResponse({'error': 'Compte verrouillé en raison de multiples tentatives de connexion échouées. Réessayez plus tard.'}, status=403)
+
         if user.check_password(password):
+            user.failed_login_attempts = 0  # Réinitialisation des tentatives échouées
+            user.save()
+            
             refresh = RefreshToken.for_user(user)  # Génération des tokens JWT
             return JsonResponse({
                 'refresh': str(refresh),
@@ -125,13 +168,27 @@ def login(request):
                 'message': 'Connexion réussie'
             })
 
+        # Si le mot de passe est incorrect
+        user.failed_login_attempts += 1
+        if user.failed_login_attempts >= 5:  # Nombre maximal de tentatives
+            user.lock_account(minutes=10)  # Verrouille le compte pendant 10 minutes
+            return JsonResponse({'error': 'Compte verrouillé après 5 tentatives échouées. Réessayez dans 10 minutes.'}, status=403)
+
+        user.save()
         return JsonResponse({'error': 'Mot de passe incorrect'}, status=400)
 
-    return JsonResponse({'error': 'Méthode non autorisée. Utilisez POST.'}, status=405)
 
-
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def request_password_reset(request):
+    """
+    Gère la demande de réinitialisation du mot de passe de l'utilisateur.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant l'e-mail de l'utilisateur.
+
+    Returns:
+        JsonResponse: Réponse JSON confirmant l'envoi de l'e-mail de réinitialisation.
+    """
     if request.method == 'POST':
         email = request.POST.get('email')
         if not email:
@@ -150,8 +207,18 @@ def request_password_reset(request):
         return JsonResponse({'message': 'Un e-mail de réinitialisation a été envoyé.'})
 
 
-@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def reset_password(request, token):
+    """
+    Réinitialise le mot de passe de l'utilisateur à l'aide du jeton fourni.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant le nouveau mot de passe.
+        token (str): Le jeton de réinitialisation de mot de passe.
+
+    Returns:
+        JsonResponse: Réponse JSON confirmant la réinitialisation du mot de passe.
+    """
     if request.method == 'POST':
         user = get_object_or_404(User, reset_token=token)  # Utilisation de get_object_or_404
 

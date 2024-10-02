@@ -60,6 +60,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     otp_created_at = models.DateTimeField(null=True, blank=True)  # Champ pour la date de création de l'OTP
     reset_token = models.CharField(max_length=64, null=True, blank=True)  # Champ pour le token de réinitialisation
     reset_token_expiration = models.DateTimeField(null=True, blank=True)  # Expiration du token de réinitialisation
+    failed_login_attempts = models.IntegerField(default=0)  # Nombre de tentatives de connexion échouées
+    failed_otp_attempts = models.IntegerField(default=0)  # Nombre de tentatives d'OTP échouées
+    locked_until = models.DateTimeField(null=True, blank=True)  # Date/heure jusqu'à laquelle le compte est verrouillé
     is_active = models.BooleanField(default=True)  # Indique si le compte est actif
     is_staff = models.BooleanField(default=False)  # Indique si l'utilisateur peut accéder à l'admin
 
@@ -105,3 +108,25 @@ class User(AbstractBaseUser, PermissionsMixin):
             bool: True si le token est valide, False sinon.
         """
         return self.reset_token == token and self.reset_token_expiration and timezone.now() <= self.reset_token_expiration
+    
+    def lock_account(self, minutes=10):
+        """
+        Verrouille le compte de l'utilisateur pour une durée déterminée.
+
+        Args:
+            minutes (int, optional): Le nombre de minutes pendant lesquelles le compte doit être verrouillé. 
+                                     La valeur par défaut est 10 minutes.
+        """
+        self.locked_until = timezone.now() + timedelta(minutes=minutes)
+        self.save()
+
+    def is_account_locked(self):
+        """
+        Vérifie si le compte de l'utilisateur est actuellement verrouillé.
+
+        Returns:
+            bool: True si le compte est verrouillé, False sinon.
+        """
+        if self.locked_until and timezone.now() < self.locked_until:
+            return True
+        return False
