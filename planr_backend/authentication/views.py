@@ -181,6 +181,27 @@ def login(request):
         return JsonResponse({'error': 'Mot de passe incorrect'}, status=400)
 
 
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+def logout(request):
+    """
+    Gère la déconnexion de l'utilisateur et la révocation du token de rafraîchissement.
+
+    Args:
+        request (HttpRequest): La requête HTTP contenant le token de rafraîchissement.
+
+    Returns:
+        JsonResponse: Réponse JSON confirmant la déconnexion.
+    """
+    try:
+        refresh_token = request.POST.get('refresh')
+        token = RefreshToken(refresh_token)
+        token.blacklist()  # Ajoute le token de rafraîchissement à la liste noire
+
+        return JsonResponse({'message': 'Déconnexion réussie et token révoqué.'}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': 'Une erreur est survenue lors de la déconnexion.'}, status=400)
+
+
 @csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def request_password_reset(request):
     """
