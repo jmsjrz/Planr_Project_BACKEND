@@ -17,6 +17,9 @@ def register(request):
 
         # Vérification de l'inscription par e-mail
         if email:
+            if User.objects.filter(email=email).exists():
+                return JsonResponse({'error': 'Un utilisateur avec cet e-mail existe déjà.'}, status=400)
+            
             if not password:
                 return JsonResponse({'error': 'Un mot de passe est requis pour l\'inscription par e-mail'}, status=400)
 
@@ -36,6 +39,9 @@ def register(request):
 
         # Vérification de l'inscription par numéro de téléphone
         if phone_number:
+            if User.objects.filter(phone_number=phone_number).exists():
+                return JsonResponse({'error': 'Un utilisateur avec ce numéro de téléphone existe déjà.'}, status=400)
+            
             otp = generate_otp()
             send_sms_otp(phone_number, otp)  # Envoi de l'OTP par SMS
 
