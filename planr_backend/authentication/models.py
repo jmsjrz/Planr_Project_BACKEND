@@ -130,3 +130,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.locked_until and timezone.now() < self.locked_until:
             return True
         return False
+    
+class PasswordResetAttempt(models.Model):
+    """
+    Modèle pour suivre les tentatives de réinitialisation de mot de passe d'un utilisateur.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reset_attempts')
+    requested_at = models.DateTimeField(auto_now_add=True)  # Date/heure de la tentative de réinitialisation
+    ip_address = models.CharField(max_length=45, null=True, blank=True)  # Adresse IP de la demande
+    user_agent = models.CharField(max_length=256, null=True, blank=True)  # User agent du navigateur
+
+    def __str__(self):
+        return f"Tentative de réinitialisation de {self.user.email if self.user.email else self.user.phone_number} à {self.requested_at}"

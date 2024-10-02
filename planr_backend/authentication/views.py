@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-from .models import User
+from .models import User, PasswordResetAttempt
 from .utils import generate_otp, send_email_otp, send_sms_otp
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
@@ -195,6 +195,19 @@ def request_password_reset(request):
             return JsonResponse({'error': 'L\'e-mail est requis'}, status=400)
 
         user = get_object_or_404(User, email=email)  # Utilisation de get_object_or_404
+
+        # Vérifier la dernière tentative de réinitialisation
+        recent_attempt = PasswordResetAttempt.objects.filter(user=user).order_by('-requested_at').first()
+        if recent_attempt and recent_attempt.requested_at > timezone.now() - timedelta(minutes=15):
+            return JsonResponse({'error': 'Une demande de réinitialisation a déjà été faite récemment. Veuillez patienter 15 minutes.'}, status=429)
+
+        # Enregistrement de la tentative de réinitialisation
+        PasswordResetAttempt.objects.create(
+            user=user,
+            ip_address=request.META.get('REMOTE_ADDR'),
+            user_agent=request.META.get('HTTP_USER_AGENT')
+        )
+
         user.generate_reset_token()  # Génération du jeton de réinitialisation
 
         reset_link = f"http://localhost:8000/auth/reset-password/{user.reset_token}/"
