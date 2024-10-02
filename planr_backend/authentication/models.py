@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 import uuid
+import hashlib
 
 class UserManager(BaseUserManager):
     """
@@ -56,7 +57,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     """
     email = models.EmailField(unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
-    otp = models.CharField(max_length=6, null=True, blank=True)  # Champ pour stocker l'OTP
+    otp = models.CharField(max_length=64, null=True, blank=True)  # Champ pour stocker l'OTP haché
     otp_created_at = models.DateTimeField(null=True, blank=True)  # Champ pour la date de création de l'OTP
     reset_token = models.CharField(max_length=64, null=True, blank=True)  # Champ pour le token de réinitialisation
     reset_token_expiration = models.DateTimeField(null=True, blank=True)  # Expiration du token de réinitialisation
@@ -84,9 +85,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         Returns:
             bool: True si le code OTP est valide, False sinon.
         """
-        if self.otp == otp and self.otp_created_at:
+        if self.otp and self.otp_created_at:
             expiration_time = self.otp_created_at + timedelta(minutes=10)  # L'OTP est valide pendant 10 minutes
-            return timezone.now() <= expiration_time
+            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP soumis
+            return hashed_otp == self.otp and timezone.now() <= expiration_time
         return False
 
     def generate_reset_token(self):

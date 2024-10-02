@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import timedelta
+import hashlib
 
 @csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def register(request):
@@ -34,12 +35,13 @@ def register(request):
                 return JsonResponse({'error': 'Un mot de passe est requis pour l\'inscription par e-mail'}, status=400)
 
             otp = generate_otp()
+            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
             send_email_otp(email, otp)  # Envoi de l'OTP par e-mail
 
             # Création d'un utilisateur non activé
             user = User.objects.create(
                 email=email,
-                otp=otp,
+                otp=hashed_otp,  # Stocke le hachage de l'OTP
                 otp_created_at=timezone.now(),
                 is_active=False
             )
@@ -53,12 +55,13 @@ def register(request):
                 return JsonResponse({'error': 'Un utilisateur avec ce numéro de téléphone existe déjà.'}, status=400)
             
             otp = generate_otp()
+            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
             send_sms_otp(phone_number, otp)  # Envoi de l'OTP par SMS
 
             # Création de l'utilisateur
             user = User.objects.create(
                 phone_number=phone_number,
-                otp=otp,
+                otp=hashed_otp,  # Stocke le hachage de l'OTP
                 otp_created_at=timezone.now(),
                 is_active=False
             )
