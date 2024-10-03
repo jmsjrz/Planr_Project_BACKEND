@@ -158,7 +158,7 @@ def verify_otp(request):
 @csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
 def login(request):
     """
-    Gère la connexion de l'utilisateur via e-mail et mot de passe.
+    Gère la connexion de l'utilisateur via e-mail et mot de passe. Envoie une notification en cas de connexion suspecte.
 
     Args:
         request (HttpRequest): La requête HTTP contenant l'e-mail et le mot de passe.
@@ -181,9 +181,28 @@ def login(request):
 
         if user.check_password(password):
             user.failed_login_attempts = 0  # Réinitialisation des tentatives échouées
+
+            # Récupération de l'IP et du user agent actuel
+            current_ip = request.META.get('REMOTE_ADDR')
+            current_user_agent = request.META.get('HTTP_USER_AGENT')
+
+            # Vérification si l'IP ou le user agent a changé
+            if user.last_login_ip != current_ip or user.last_login_user_agent != current_user_agent:
+                # Envoyer une notification (par exemple par e-mail)
+                send_mail(
+                    'Nouvelle connexion détectée',
+                    f'Une nouvelle connexion a été effectuée sur votre compte depuis l\'adresse IP {current_ip} et l\'appareil {current_user_agent}. Si cela n\'était pas vous, veuillez contacter le support immédiatement.',
+                    'no-reply@planr.dev',
+                    [user.email],
+                )
+
+            # Mise à jour des informations de connexion
+            user.last_login_ip = current_ip
+            user.last_login_user_agent = current_user_agent
             user.save()
-            
-            refresh = RefreshToken.for_user(user)  # Génération des tokens JWT
+
+            # Génération des tokens JWT
+            refresh = RefreshToken.for_user(user)
             return JsonResponse({
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),

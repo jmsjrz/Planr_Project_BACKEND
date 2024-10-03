@@ -61,6 +61,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     otp_created_at = models.DateTimeField(null=True, blank=True)  # Champ pour la date de création de l'OTP
     reset_token = models.CharField(max_length=64, null=True, blank=True)  # Champ pour le token de réinitialisation
     reset_token_expiration = models.DateTimeField(null=True, blank=True)  # Expiration du token de réinitialisation
+    last_login_ip = models.CharField(max_length=45, null=True, blank=True)  # Dernière adresse IP de connexion
+    last_login_user_agent = models.CharField(max_length=256, null=True, blank=True)  # Dernier user agent de connexion
     failed_login_attempts = models.IntegerField(default=0)  # Nombre de tentatives de connexion échouées
     failed_otp_attempts = models.IntegerField(default=0)  # Nombre de tentatives d'OTP échouées
     locked_until = models.DateTimeField(null=True, blank=True)  # Date/heure jusqu'à laquelle le compte est verrouillé
