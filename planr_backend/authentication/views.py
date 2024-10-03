@@ -13,6 +13,7 @@ import hashlib
 def register(request):
     """
     Gère l'inscription d'un utilisateur par e-mail ou numéro de téléphone, envoie un OTP pour vérification.
+    Ajoute une vérification pour limiter la fréquence des demandes d'OTP (toutes les 15 minutes).
 
     Args:
         request (HttpRequest): La requête HTTP contenant les données d'inscription.
@@ -28,9 +29,13 @@ def register(request):
 
         # Vérification de l'inscription par e-mail
         if email:
-            if User.objects.filter(email=email).exists():
-                return JsonResponse({'error': 'Un utilisateur avec cet e-mail existe déjà.'}, status=400)
-            
+            user = User.objects.filter(email=email).first()
+
+            if user:
+                # Vérification de la fréquence d'envoi d'OTP (toutes les 15 minutes)
+                if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
+                    return JsonResponse({'error': 'Vous devez attendre 15 minutes avant de demander un nouveau code OTP.'}, status=429)
+
             if not password:
                 return JsonResponse({'error': 'Un mot de passe est requis pour l\'inscription par e-mail'}, status=400)
 
@@ -38,34 +43,48 @@ def register(request):
             hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
             send_email_otp(email, otp)  # Envoi de l'OTP par e-mail
 
-            # Création d'un utilisateur non activé
-            user = User.objects.create(
-                email=email,
-                otp=hashed_otp,  # Stocke le hachage de l'OTP
-                otp_created_at=timezone.now(),
-                is_active=False
-            )
+            # Création d'un utilisateur non activé ou mise à jour de l'utilisateur existant
+            if user:
+                user.otp = hashed_otp
+                user.otp_created_at = timezone.now()
+                user.is_active = False
+            else:
+                user = User.objects.create(
+                    email=email,
+                    otp=hashed_otp,  # Stocke le hachage de l'OTP
+                    otp_created_at=timezone.now(),
+                    is_active=False
+                )
             user.set_password(password)  # Définition du mot de passe
             user.save()
             return JsonResponse({'message': 'Code OTP envoyé par e-mail pour vérification de compte'})
 
         # Vérification de l'inscription par numéro de téléphone
         if phone_number:
-            if User.objects.filter(phone_number=phone_number).exists():
-                return JsonResponse({'error': 'Un utilisateur avec ce numéro de téléphone existe déjà.'}, status=400)
-            
+            user = User.objects.filter(phone_number=phone_number).first()
+
+            if user:
+                # Vérification de la fréquence d'envoi d'OTP (toutes les 15 minutes)
+                if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
+                    return JsonResponse({'error': 'Vous devez attendre 15 minutes avant de demander un nouveau code OTP.'}, status=429)
+
             otp = generate_otp()
             hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
             send_sms_otp(phone_number, otp)  # Envoi de l'OTP par SMS
 
-            # Création de l'utilisateur
-            user = User.objects.create(
-                phone_number=phone_number,
-                otp=hashed_otp,  # Stocke le hachage de l'OTP
-                otp_created_at=timezone.now(),
-                is_active=False
-            )
-            user.save()  # Sauvegarde de l'utilisateur
+            # Création ou mise à jour de l'utilisateur
+            if user:
+                user.otp = hashed_otp
+                user.otp_created_at = timezone.now()
+                user.is_active = False
+            else:
+                user = User.objects.create(
+                    phone_number=phone_number,
+                    otp=hashed_otp,  # Stocke le hachage de l'OTP
+                    otp_created_at=timezone.now(),
+                    is_active=False
+                )
+            user.save()
             return JsonResponse({'message': 'Code OTP envoyé par SMS pour vérification de compte'})
 
         # Erreur si ni e-mail ni numéro de téléphone n'est fourni
