@@ -2,24 +2,68 @@ from django.http import JsonResponse
 from .models import User, PasswordResetAttempt
 from .utils import generate_otp, send_email_otp, send_sms_otp
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import timedelta
-import hashlib
+from ratelimit.decorators import ratelimit
+import bcrypt
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
+# EXEMPLE DE DECORATEUR DE RATELIMIT
+# @ratelimit(key='ip', rate='5/m', method='POST', block=True)  # Limite à 5 requêtes par minute par adresse IP (désactivé pour le développement) -- Utilisez pour la production
+
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
+def verify_otp(request):
+    """
+    Fusionne la vérification OTP par e-mail et par SMS.
+    """
+    email = request.POST.get('email')
+    phone_number = request.POST.get('phone_number')
+
+    if email:
+        return verify_generic_otp(request, identifier=email, id_type='email')
+    elif phone_number:
+        return verify_generic_otp(request, identifier=phone_number, id_type='phone_number')
+    return JsonResponse({'error': 'E-mail ou numéro de téléphone requis'}, status=400)
+
+def verify_generic_otp(request, identifier, id_type):
+    """
+    Vérifie l'OTP, quel que soit le type (e-mail ou téléphone).
+
+    Args:
+        identifier (str): L'e-mail ou numéro de téléphone de l'utilisateur.
+        id_type (str): Le type d'identifiant (email ou phone_number).
+
+    Returns:
+        JsonResponse: Réponse indiquant si l'OTP est valide.
+    """
+    otp = request.POST.get('otp')
+    if not otp:
+        return JsonResponse({'error': 'Le code OTP est requis'}, status=400)
+
+    user = get_object_or_404(User, **{id_type: identifier})
+
+    if user.is_otp_valid(otp):
+        user.is_active = True
+        user.save()
+
+        refresh = RefreshToken.for_user(user)
+
+        return JsonResponse({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'message': 'Vérification réussie. Utilisateur activé.'
+        })
+
+    return JsonResponse({'error': 'Le code OTP est invalide ou expiré'}, status=400)
+
+
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
 def register(request):
     """
     Gère l'inscription d'un utilisateur par e-mail ou numéro de téléphone, envoie un OTP pour vérification.
-    Ajoute une vérification pour limiter la fréquence des demandes d'OTP (toutes les 15 minutes).
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant les données d'inscription.
-
-    Returns:
-        JsonResponse: Réponse JSON indiquant le statut de l'inscription et l'envoi de l'OTP.
     """
     if request.method == 'POST':
         data = request.POST
@@ -27,181 +71,89 @@ def register(request):
         phone_number = data.get('phone_number')
         password = data.get('password')
 
-        # Vérification de l'inscription par e-mail
         if email:
-            user = User.objects.filter(email=email).first()
-
-            if user:
-                # Vérification de la fréquence d'envoi d'OTP (toutes les 15 minutes)
-                if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
-                    return JsonResponse({'error': 'Vous devez attendre 15 minutes avant de demander un nouveau code OTP.'}, status=429)
-
             if not password:
                 return JsonResponse({'error': 'Un mot de passe est requis pour l\'inscription par e-mail'}, status=400)
 
-            otp = generate_otp()
-            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
-            send_email_otp(email, otp)  # Envoi de l'OTP par e-mail
+            return handle_registration(email, 'email', password)
 
-            # Création d'un utilisateur non activé ou mise à jour de l'utilisateur existant
-            if user:
-                user.otp = hashed_otp
-                user.otp_created_at = timezone.now()
-                user.is_active = False
-            else:
-                user = User.objects.create(
-                    email=email,
-                    otp=hashed_otp,  # Stocke le hachage de l'OTP
-                    otp_created_at=timezone.now(),
-                    is_active=False
-                )
-            user.set_password(password)  # Définition du mot de passe
-            user.save()
-            return JsonResponse({'message': 'Code OTP envoyé par e-mail pour vérification de compte'})
-
-        # Vérification de l'inscription par numéro de téléphone
         if phone_number:
-            user = User.objects.filter(phone_number=phone_number).first()
+            return handle_registration(phone_number, 'phone_number')
 
-            if user:
-                # Vérification de la fréquence d'envoi d'OTP (toutes les 15 minutes)
-                if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
-                    return JsonResponse({'error': 'Vous devez attendre 15 minutes avant de demander un nouveau code OTP.'}, status=429)
-
-            otp = generate_otp()
-            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
-            send_sms_otp(phone_number, otp)  # Envoi de l'OTP par SMS
-
-            # Création ou mise à jour de l'utilisateur
-            if user:
-                user.otp = hashed_otp
-                user.otp_created_at = timezone.now()
-                user.is_active = False
-            else:
-                user = User.objects.create(
-                    phone_number=phone_number,
-                    otp=hashed_otp,  # Stocke le hachage de l'OTP
-                    otp_created_at=timezone.now(),
-                    is_active=False
-                )
-            user.save()
-            return JsonResponse({'message': 'Code OTP envoyé par SMS pour vérification de compte'})
-
-        # Erreur si ni e-mail ni numéro de téléphone n'est fourni
         return JsonResponse({'error': 'Vous devez fournir un e-mail ou un numéro de téléphone'}, status=400)
 
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
-def verify_email_otp(request):
+def handle_registration(identifier, identifier_type, password=None):
     """
-    Vérifie le code OTP envoyé à l'e-mail de l'utilisateur pour activer son compte.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant l'e-mail et l'OTP.
-
-    Returns:
-        JsonResponse: Réponse JSON indiquant le résultat de la vérification.
+    Gestion centralisée de l'inscription via e-mail ou téléphone.
     """
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        otp = request.POST.get('otp')
+    user = User.objects.filter(**{identifier_type: identifier}).first()
 
-        user = get_object_or_404(User, email=email)  # Utilisation de get_object_or_404 pour simplifier
+    if user:
+        if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
+            return JsonResponse({'error': 'Vous devez attendre 15 minutes avant de demander un nouveau code OTP.'}, status=429)
 
-        if user.is_otp_valid(otp):
-            user.is_active = True
-            user.otp = None
-            user.otp_created_at = None
-            user.save()
-            return JsonResponse({'message': 'Vérification de l\'e-mail réussie. Compte activé.'})
+    otp, hashed_otp = generate_otp()
+    
+    if identifier_type == 'email':
+        send_email_otp(identifier, otp)
+    else:
+        send_sms_otp(identifier, otp)
 
-        return JsonResponse({'error': 'Le code OTP est invalide ou expiré'}, status=400)
+    if not user:
+        user = User.objects.create(
+            **{identifier_type: identifier},
+            otp=hashed_otp,
+            otp_created_at=timezone.now(),
+            is_active=False
+        )
+    else:
+        user.otp = hashed_otp
+        user.otp_created_at = timezone.now()
+        user.is_active = False
 
+    if password:
+        user.set_password(password)
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
-def verify_otp(request):
-    """
-    Vérifie le code OTP envoyé par SMS à l'utilisateur pour activer son compte.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant le numéro de téléphone et l'OTP.
-
-    Returns:
-        JsonResponse: Réponse JSON indiquant le résultat de la vérification.
-    """
-    if request.method == 'POST':
-        phone_number = request.POST.get('phone_number')
-        otp = request.POST.get('otp')
-
-        if not otp:
-            return JsonResponse({'error': 'Le code OTP est requis'}, status=400)
-
-        user = get_object_or_404(User, phone_number=phone_number)  # Utilisation de get_object_or_404
-
-        if user.is_otp_valid(otp):
-            user.is_active = True
-            user.otp = None
-            user.otp_created_at = None
-            user.save()
-
-            refresh = RefreshToken.for_user(user)  # Génération des tokens JWT
-
-            return JsonResponse({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'message': 'Vérification réussie. Utilisateur activé.'
-            })
-
-        return JsonResponse({'error': 'Le code OTP est invalide ou expiré'}, status=400)
+    user.save()
+    return JsonResponse({'message': f"Code OTP envoyé pour vérification de compte via {identifier_type}."})
 
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
 def login(request):
     """
-    Gère la connexion de l'utilisateur via e-mail et mot de passe. Envoie une notification en cas de connexion suspecte.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant l'e-mail et le mot de passe.
-
-    Returns:
-        JsonResponse: Réponse JSON avec les jetons d'accès JWT si la connexion réussit.
+    Gère la connexion de l'utilisateur via e-mail et mot de passe.
     """
     if request.method == 'POST':
         email = request.POST.get('email')
         password = request.POST.get('password')
 
-        # Vérification des champs requis
         if not email or not password:
             return JsonResponse({'error': 'L\'e-mail et le mot de passe sont requis'}, status=400)
 
-        user = get_object_or_404(User, email=email)  # Utilisation de get_object_or_404
+        user = get_object_or_404(User, email=email)
 
         if user.is_account_locked():
-            return JsonResponse({'error': 'Compte verrouillé en raison de multiples tentatives de connexion échouées. Réessayez plus tard.'}, status=403)
+            return JsonResponse({'error': 'Compte verrouillé en raison de multiples tentatives de connexion échouées.'}, status=403)
 
         if user.check_password(password):
-            user.failed_login_attempts = 0  # Réinitialisation des tentatives échouées
+            user.failed_login_attempts = 0  
 
-            # Récupération de l'IP et du user agent actuel
             current_ip = request.META.get('REMOTE_ADDR')
             current_user_agent = request.META.get('HTTP_USER_AGENT')
 
-            # Vérification si l'IP ou le user agent a changé
             if user.last_login_ip != current_ip or user.last_login_user_agent != current_user_agent:
-                # Envoyer une notification (par exemple par e-mail)
                 send_mail(
                     'Nouvelle connexion détectée',
-                    f'Une nouvelle connexion a été effectuée sur votre compte depuis l\'adresse IP {current_ip} et l\'appareil {current_user_agent}. Si cela n\'était pas vous, veuillez contacter le support immédiatement.',
+                    f'Une nouvelle connexion a été effectuée sur votre compte depuis l\'adresse IP {current_ip} et l\'appareil {current_user_agent}.',
                     'no-reply@planr.dev',
                     [user.email],
                 )
 
-            # Mise à jour des informations de connexion
             user.last_login_ip = current_ip
             user.last_login_user_agent = current_user_agent
             user.save()
 
-            # Génération des tokens JWT
             refresh = RefreshToken.for_user(user)
             return JsonResponse({
                 'refresh': str(refresh),
@@ -209,11 +161,10 @@ def login(request):
                 'message': 'Connexion réussie'
             })
 
-        # Si le mot de passe est incorrect
         user.failed_login_attempts += 1
-        if user.failed_login_attempts >= 5:  # Nombre maximal de tentatives
-            user.lock_account(minutes=10)  # Verrouille le compte pendant 10 minutes
-            return JsonResponse({'error': 'Compte verrouillé après 5 tentatives échouées. Réessayez dans 10 minutes.'}, status=403)
+        if user.failed_login_attempts >= 5:
+            user.lock_account(minutes=10)  
+            return JsonResponse({'error': 'Compte verrouillé après 5 tentatives échouées.'}, status=403)
 
         user.save()
         return JsonResponse({'error': 'Mot de passe incorrect'}, status=400)
@@ -221,81 +172,67 @@ def login(request):
 
 @csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
 def logout(request):
-    """
-    Gère la déconnexion de l'utilisateur et la révocation du token de rafraîchissement.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant le token de rafraîchissement.
-
-    Returns:
-        JsonResponse: Réponse JSON confirmant la déconnexion.
-    """
     try:
         refresh_token = request.POST.get('refresh')
+        if not refresh_token:
+            raise ValueError("Le token de rafraîchissement est manquant")
+        
         token = RefreshToken(refresh_token)
-        token.blacklist()  # Ajoute le token de rafraîchissement à la liste noire
+        token.blacklist()
 
         return JsonResponse({'message': 'Déconnexion réussie et token révoqué.'}, status=200)
+    
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    
     except Exception as e:
-        return JsonResponse({'error': 'Une erreur est survenue lors de la déconnexion.'}, status=400)
+        return JsonResponse({'error': 'Erreur lors de la déconnexion. Veuillez réessayer.'}, status=400)
 
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
 def request_password_reset(request):
-    """
-    Gère la demande de réinitialisation du mot de passe de l'utilisateur.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant l'e-mail de l'utilisateur.
-
-    Returns:
-        JsonResponse: Réponse JSON confirmant l'envoi de l'e-mail de réinitialisation.
-    """
-    if request.method == 'POST':
+    try:
         email = request.POST.get('email')
         if not email:
-            return JsonResponse({'error': 'L\'e-mail est requis'}, status=400)
+            raise ValueError("L'e-mail est requis pour réinitialiser le mot de passe.")
 
-        user = get_object_or_404(User, email=email)  # Utilisation de get_object_or_404
+        user = get_object_or_404(User, email=email)
 
-        # Vérifier la dernière tentative de réinitialisation
         recent_attempt = PasswordResetAttempt.objects.filter(user=user).order_by('-requested_at').first()
         if recent_attempt and recent_attempt.requested_at > timezone.now() - timedelta(minutes=15):
-            return JsonResponse({'error': 'Une demande de réinitialisation a déjà été faite récemment. Veuillez patienter 15 minutes.'}, status=429)
+            raise ValueError("Une demande de réinitialisation a déjà été faite récemment. Patientez 15 minutes.")
 
-        # Enregistrement de la tentative de réinitialisation
         PasswordResetAttempt.objects.create(
             user=user,
             ip_address=request.META.get('REMOTE_ADDR'),
             user_agent=request.META.get('HTTP_USER_AGENT')
         )
 
-        user.generate_reset_token()  # Génération du jeton de réinitialisation
+        user.generate_reset_token()
 
-        reset_link = f"http://localhost:8000/auth/reset-password/{user.reset_token}/"
+        reset_link = f"{settings.BASE_URL}/auth/reset-password/{user.reset_token}/"
         send_mail(
             'Réinitialisation de votre mot de passe',
-            f'Cliquez sur le lien pour réinitialiser votre mot de passe: {reset_link}',
+            f'Cliquez ici pour réinitialiser votre mot de passe: {reset_link}',
             'no-reply@planr.dev',
             [email],
         )
         return JsonResponse({'message': 'Un e-mail de réinitialisation a été envoyé.'})
 
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    
+    except Exception as e:
+        return JsonResponse({'error': 'Une erreur est survenue. Veuillez réessayer.'}, status=500)
 
-@csrf_exempt  # Décorateur pour désactiver la protection CSRF en environnement de développement
+
+@csrf_exempt # Décorateur pour désactiver la protection CSRF en environnement de développement
 def reset_password(request, token):
     """
     Réinitialise le mot de passe de l'utilisateur à l'aide du jeton fourni.
-
-    Args:
-        request (HttpRequest): La requête HTTP contenant le nouveau mot de passe.
-        token (str): Le jeton de réinitialisation de mot de passe.
-
-    Returns:
-        JsonResponse: Réponse JSON confirmant la réinitialisation du mot de passe.
     """
     if request.method == 'POST':
-        user = get_object_or_404(User, reset_token=token)  # Utilisation de get_object_or_404
+        user = get_object_or_404(User, reset_token=token)
 
         if user.reset_token_expiration < timezone.now():
             return JsonResponse({'error': 'Le jeton de réinitialisation a expiré'}, status=400)
