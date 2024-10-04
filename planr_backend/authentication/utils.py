@@ -1,19 +1,26 @@
-import random, hashlib
+import random, bcrypt
 from django.core.mail import send_mail
 from django.conf import settings
 
 def generate_otp():
     """
     Génère un OTP de 6 chiffres et retourne le hachage de l'OTP.
-    
+
     Returns:
         tuple: OTP original et OTP haché.
     """
-    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])  # Génère un OTP de 6 chiffres
-    hashed_otp = hashlib.sha256(otp.encode()).hexdigest()  # Hachage de l'OTP
-    return otp, hashed_otp  # Retourne l'OTP original et le haché
+    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])  # Génération de l'OTP
+    hashed_otp = bcrypt.hashpw(otp.encode('utf-8'), bcrypt.gensalt())  # Hachage de l'OTP avec bcrypt
+    return otp, hashed_otp.decode('utf-8')  # Retourne l'OTP et son hachage
 
 def send_email_otp(email, otp):
+    """
+    Envoie l'OTP par e-mail à l'utilisateur.
+
+    Args:
+        email (str): L'adresse e-mail de l'utilisateur.
+        otp (str): Le code OTP à envoyer.
+    """
     send_mail(
         'Votre code de vérification',
         f'Votre code de vérification est : {otp}',
@@ -24,5 +31,11 @@ def send_email_otp(email, otp):
     print(f"Code OTP envoyé à l'e-mail {email}: {otp}")
 
 def send_sms_otp(phone_number, otp):
-    # Simuler l'envoi d'un SMS en imprimant le code dans la console
+    """
+    Simule l'envoi d'un OTP par SMS.
+
+    Args:
+        phone_number (str): Le numéro de téléphone de l'utilisateur.
+        otp (str): Le code OTP à envoyer.
+    """
     print(f"Code OTP envoyé au numéro {phone_number}: {otp}")
