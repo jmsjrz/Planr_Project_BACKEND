@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv()
 
 # Configuration de base - ne convient pas pour un environnement de production
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')  # Utilise localhost par défaut en dev
 SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG') == 'True'
 ALLOWED_HOSTS = []
