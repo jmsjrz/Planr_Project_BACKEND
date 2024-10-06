@@ -19,13 +19,15 @@ Voici les principaux fichiers utilisés pour implémenter cette fonctionnalité 
 
 Voici les endpoints disponibles pour cette fonctionnalité d'authentification :
 
-- `POST /users/register/` : Inscription d'un utilisateur via e-mail ou numéro de téléphone.
-- `POST /users/verify-otp/` : Vérification du code OTP reçu.
-- `POST /users/login/` : Connexion d'un utilisateur avec e-mail et mot de passe ou numéro de téléphone.
-- `POST /users/logout/` : Déconnexion d'un utilisateur en révoquant le token de rafraîchissement.
-- `POST /users/request-password-reset/` : Demande de réinitialisation de mot de passe par e-mail.
-- `POST /users/reset-password/<token>/` : Réinitialisation du mot de passe avec un token de réinitialisation.
-- `POST /users/resend-otp/` : Renvoi d'un nouveau code OTP.
+| Endpoint                              | Description                                                                    | Paramètres requis                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `POST /users/register/`               | Inscription d'un utilisateur via e-mail ou numéro de téléphone.                | `email` OU `phone_number`, et un `password` est requis si l'inscription se fait par e-mail. |
+| `POST /users/verify-otp/`             | Vérification du code OTP reçu.                                                 | `otp` (le token JWT est utilisé pour identifier l'utilisateur).                             |
+| `POST /users/login/`                  | Connexion d'un utilisateur avec e-mail et mot de passe ou numéro de téléphone. | `email` ET `password`, ou `phone_number` ET `password`.                                     |
+| `POST /users/logout/`                 | Déconnexion d'un utilisateur en révoquant le token de rafraîchissement.        | `refresh_token`.                                                                            |
+| `POST /users/request-password-reset/` | Demande de réinitialisation de mot de passe par e-mail.                        | `email`.                                                                                    |
+| `POST /users/reset-password/<token>/` | Réinitialisation du mot de passe avec un token de réinitialisation.            | `new_password`.                                                                             |
+| `POST /users/resend-otp/`             | Renvoi d'un nouveau code OTP.                                                  | Utilisation du token JWT pour s'authentifier.                                               |
 
 ## FEATURES
 
