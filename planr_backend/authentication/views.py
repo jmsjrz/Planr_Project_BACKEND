@@ -65,38 +65,30 @@ class UserViewSet(viewsets.ModelViewSet):
             user.set_password(password)
 
         user.save()
-        return Response({'message': f"Code OTP envoyé pour vérification de compte via {identifier_type}."})
+
+        # Générer un token JWT même si le compte n'est pas encore activé
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'message': f"Code OTP envoyé pour vérification de compte via {identifier_type}.",
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        })
 
     @action(detail=False, methods=['post'], url_path='verify-otp')
     def verify_otp(self, request):
-        email = request.data.get('email')
-        phone_number = request.data.get('phone_number')
         otp = request.data.get('otp')
 
         if not otp:
             return Response({'error': "Le code OTP est requis"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if email:
-            return self.process_otp_verification(email, 'email', otp)
-        elif phone_number:
-            return self.process_otp_verification(phone_number, 'phone_number', otp)
-        return Response({'error': "E-mail ou numéro de téléphone requis"}, status=status.HTTP_400_BAD_REQUEST)
-
-    def process_otp_verification(self, identifier, id_type, otp):
-        user = get_object_or_404(User, **{id_type: identifier})
+        user = self.request.user  # Récupérer l'utilisateur à partir du token JWT
 
         if user.is_otp_valid(otp):
             user.is_active = True
             user.failed_otp_attempts = 0
             user.save()
 
-            refresh = RefreshToken.for_user(user)
-
-            return Response({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'message': "Vérification réussie. Utilisateur activé."
-            })
+            return Response({'message': "Compte vérifié avec succès."})
 
         user.failed_otp_attempts += 1
         if user.failed_otp_attempts >= 3:
@@ -105,6 +97,21 @@ class UserViewSet(viewsets.ModelViewSet):
 
         user.save()
         return Response({'error': "Le code OTP est invalide ou expiré"}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='resend-otp')
+    def resend_otp(self, request):
+        user = self.request.user
+        otp, hashed_otp = generate_otp()
+        user.otp = hashed_otp
+        user.otp_created_at = timezone.now()
+        user.save()
+
+        if user.email:
+            send_email_otp(user.email, otp)
+        elif user.phone_number:
+            send_sms_otp(user.phone_number, otp)
+
+        return Response({'message': "Nouveau code OTP envoyé."})
 
     @action(detail=False, methods=['post'])
     def login(self, request):
