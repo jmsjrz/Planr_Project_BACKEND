@@ -1,7 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -11,6 +10,8 @@ from .models import User, PasswordResetAttempt
 from .serializers import UserSerializer, PasswordResetAttemptSerializer
 from .utils import generate_otp
 from .notifications import send_email_otp, send_sms_otp, send_login_alert
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.permissions import AllowAny
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -20,7 +21,8 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def register(self, request):
         data = request.data
         email = data.get('email')
@@ -30,12 +32,17 @@ class UserViewSet(viewsets.ModelViewSet):
         if email:
             if not password:
                 return Response({'error': "Un mot de passe est requis pour l'inscription par e-mail"}, status=status.HTTP_400_BAD_REQUEST)
-            return self.process_registration(email, 'email', password)
+            response = self.process_registration(email, 'email', password)
+        elif phone_number:
+            response = self.process_registration(phone_number, 'phone_number')
+        else:
+            return Response({'error': "Vous devez fournir un e-mail ou un numéro de téléphone"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if phone_number:
-            return self.process_registration(phone_number, 'phone_number')
+        # Stocker l'ID de l'utilisateur dans la session
+        user = User.objects.get(email=email) if email else User.objects.get(phone_number=phone_number)
+        request.session['user_id'] = user.id
 
-        return Response({'error': "Vous devez fournir un e-mail ou un numéro de téléphone"}, status=status.HTTP_400_BAD_REQUEST)
+        return response
 
     def process_registration(self, identifier, identifier_type, password=None):
         user = User.objects.filter(**{identifier_type: identifier}).first()
@@ -66,28 +73,32 @@ class UserViewSet(viewsets.ModelViewSet):
 
         user.save()
 
-        # Générer un token JWT même si le compte n'est pas encore activé
-        refresh = RefreshToken.for_user(user)
         return Response({
-            'message': f"Code OTP envoyé pour vérification de compte via {identifier_type}.",
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            'message': f"Code OTP envoyé pour vérification de compte via {identifier_type}."
         })
 
-    @action(detail=False, methods=['post'], url_path='verify-otp')
+    @action(detail=False, methods=['post'], url_path='verify-otp', permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def verify_otp(self, request):
         otp = request.data.get('otp')
 
         if not otp:
             return Response({'error': "Le code OTP est requis"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = self.request.user  # Récupérer l'utilisateur à partir du token JWT
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response({'error': "Session expirée ou invalide. Veuillez recommencer le processus d'inscription."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({'error': "Utilisateur non trouvé"}, status=status.HTTP_404_NOT_FOUND)
 
         if user.is_otp_valid(otp):
             user.is_active = True
             user.failed_otp_attempts = 0
             user.save()
-
+            # Nettoyer l'ID de l'utilisateur de la session
+            del request.session['user_id']
             return Response({'message': "Compte vérifié avec succès."})
 
         user.failed_otp_attempts += 1
@@ -98,9 +109,17 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save()
         return Response({'error': "Le code OTP est invalide ou expiré"}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'], url_path='resend-otp')
+    @action(detail=False, methods=['post'], url_path='resend-otp', permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def resend_otp(self, request):
-        user = self.request.user
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response({'error': "Session expirée ou invalide. Veuillez recommencer le processus d'inscription."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({'error': "Utilisateur non trouvé"}, status=status.HTTP_404_NOT_FOUND)
+
         otp, hashed_otp = generate_otp()
         user.otp = hashed_otp
         user.otp_created_at = timezone.now()
@@ -113,7 +132,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response({'message': "Nouveau code OTP envoyé."})
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def login(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -125,6 +145,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
         if user.is_account_locked():
             return Response({'error': "Compte verrouillé en raison de multiples tentatives de connexion échouées."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not user.is_active:
+            return Response({'error': "Votre compte n'est pas activé. Veuillez vérifier votre e-mail pour activer votre compte."}, status=status.HTTP_403_FORBIDDEN)
 
         if user.check_password(password):
             return self.process_successful_login(user, request)
@@ -149,27 +172,20 @@ class UserViewSet(viewsets.ModelViewSet):
         user.last_login_user_agent = current_user_agent
         user.save()
 
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'message': "Connexion réussie"
-        })
+        # Stocker l'ID de l'utilisateur dans la session pour maintenir la connexion
+        request.session['user_id'] = user.id
 
-    @action(detail=False, methods=['post'])
+        return Response({'message': "Connexion réussie"})
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def logout(self, request):
-        refresh_token = request.data.get('refresh')
-        if not refresh_token:
-            return Response({'error': "Le token de rafraîchissement est manquant"}, status=status.HTTP_400_BAD_REQUEST)
+        # Détruire la session pour déconnecter l'utilisateur
+        request.session.flush()
+        return Response({'message': "Déconnexion réussie."}, status=status.HTTP_200_OK)
 
-        try:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({'message': "Déconnexion réussie et token révoqué."}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({'error': "Erreur lors de la déconnexion. Veuillez réessayer."}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=False, methods=['post'], url_path='request-password-reset')
+    @action(detail=False, methods=['post'], url_path='request-password-reset', permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def request_password_reset(self, request):
         email = request.data.get('email')
         if not email:
@@ -197,7 +213,8 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         return Response({'message': "Un e-mail de réinitialisation a été envoyé."})
 
-    @action(detail=False, methods=['post'], url_path='reset-password/(?P<token>[^/.]+)')
+    @action(detail=False, methods=['post'], url_path='reset-password/(?P<token>[^/.]+)', permission_classes=[AllowAny])
+    @csrf_exempt  # Si vous utilisez des clients non-web, pensez à la sécurité
     def reset_password(self, request, token):
         user = get_object_or_404(User, reset_token=token)
 
