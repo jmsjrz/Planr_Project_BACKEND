@@ -25,6 +25,7 @@ Voici les endpoints disponibles pour cette fonctionnalité d'authentification :
 - `POST /users/logout/` : Déconnexion d'un utilisateur en révoquant le token de rafraîchissement.
 - `POST /users/request-password-reset/` : Demande de réinitialisation de mot de passe par e-mail.
 - `POST /users/reset-password/<token>/` : Réinitialisation du mot de passe avec un token de réinitialisation.
+- `POST /users/resend-otp/` : Renvoi d'un nouveau code OTP.
 
 ## FEATURES
 
@@ -33,21 +34,21 @@ Voici les endpoints disponibles pour cette fonctionnalité d'authentification :
 - Les utilisateurs peuvent s'inscrire en utilisant soit un e-mail, soit un numéro de téléphone.
 - Un mot de passe est requis pour l'inscription par e-mail.
 - Un code OTP (One-Time Password) est envoyé à l'utilisateur pour vérifier l'inscription. Ce code est envoyé par e-mail ou par SMS selon la méthode choisie.
+- Un token JWT temporaire est également généré pour l'utilisateur, afin de lier sa session jusqu'à la validation de l'OTP.
 
 ### 2. Vérification OTP
 
 - L'utilisateur doit entrer le code OTP reçu pour activer son compte.
+- L'utilisateur entre uniquement le code OTP sans avoir besoin de ressaisir son e-mail ou numéro de téléphone, grâce au token JWT.
 - Le code OTP est valide pendant 10 minutes et est sécurisé par un hachage SHA256.
+- Si l'OTP expire ou est perdu, l'utilisateur peut demander un nouvel OTP via l'endpoint de renvoi d'OTP.
 - Après 3 tentatives de saisie incorrecte du code OTP, le compte est temporairement verrouillé pour 10 minutes.
 
 ### 3. Connexion
 
 - Les utilisateurs peuvent se connecter en utilisant leur e-mail et leur mot de passe, ou leur numéro de téléphone.
-
 - Lors de la connexion avec un numéro de téléphone, un nouveau code OTP est envoyé pour validation.
-
 - Après 5 tentatives de connexion incorrecte, le compte est temporairement verrouillé pour 10 minutes.
-
 - Si une connexion est effectuée depuis un nouvel appareil ou une nouvelle adresse IP, une alerte est envoyée à l'utilisateur par e-mail pour assurer la sécurité.
 
 ### 4. Réinitialisation de Mot de Passe
