@@ -46,9 +46,14 @@ MIDDLEWARE = [
 	'corsheaders.middleware.CorsMiddleware',
 ]
 
+# Configuration des CORS
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-]   
+	"http://localhost:5173",
+]
+
+# Configuration des paramètres de sécurité
+CORS_ALLOW_CREDENTIALS = True
 
 
 # Configuration des URLs
