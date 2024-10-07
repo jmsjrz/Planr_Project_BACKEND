@@ -3,10 +3,10 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
-# Construction des chemins internes au projet 
+# Construction des chemins internes au projet
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Chargement des variables d'environnement depuis le fichier .env
+# Chargement des variables d'environnement
 load_dotenv()
 
 # Configuration de base - ne convient pas pour un environnement de production
@@ -26,10 +26,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Applications tierces
-    'rest_framework', # Framework pour les API REST
-    'rest_framework_simplejwt.token_blacklist', # Blacklist JWT tokens
-    'corsheaders', # Middleware pour gérer les requêtes CORS
-    'django_ratelimit', # Rate limiting pour les API
+    'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
+    'corsheaders',
+    # 'django_ratelimit', # Si vous ajoutez le rate limiting
 
     # Applications personnalisées
     'authentication',
@@ -40,17 +40,17 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS Middleware avant CSRF
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware', 
-    'django.middleware.clickjacking.XFrameOptionsMiddleware', 
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Configuration des CORS - Cross-Origin Resource Sharing
+# Configuration des CORS
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000", # URL de l'application frontend - React
-    "http://localhost:5173", # URL de l'application frontend - React avec Vite
+    "http://localhost:3000",
+    "http://localhost:5173",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -77,7 +77,7 @@ TEMPLATES = [
 # Configuration WSGI
 WSGI_APPLICATION = 'planr_backend.wsgi.application'
 
-# Configuration de la base de données - PostgreSQL
+# Configuration de la base de données
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -94,16 +94,16 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    # Configuration du rate limiting
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.UserRateThrottle',
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'user': '10/minute',
-    },
+    # Ajoutez un rate limit global si nécessaire
+    # 'DEFAULT_THROTTLE_CLASSES': [
+    #     'rest_framework.throttling.UserRateThrottle',
+    # ],
+    # 'DEFAULT_THROTTLE_RATES': {
+    #     'user': '10/minute',
+    # },
 }
 
-# Configuration de Simple JWT - JSON Web Tokens
+# Configuration de Simple JWT
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Plus long pour faciliter les tests en développement
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -112,12 +112,14 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': lambda user: True,
 }
 
-# Configuration d'authentification personnalisée
+# Configuration d'authentification
 AUTH_USER_MODEL = 'authentication.User'
 
-# Validation des mots de passe 
+# Validation des mots de passe
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -133,7 +135,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# Configuration de l'e-mail - Console par défaut en développement
+# Configuration de l'e-mail
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 DEFAULT_FROM_EMAIL = 'no-reply@planr.dev'
 
@@ -143,14 +145,14 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Fichiers statiques si nécessaire (CSS, JavaScript, Images)
+# Fichiers statiques (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Type de champ clé primaire par défaut
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Configuration du logging - Écrit les logs dans un fichier debug.log
+# Logging Configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

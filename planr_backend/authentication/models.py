@@ -6,21 +6,7 @@ import uuid
 import hashlib
 
 class UserManager(BaseUserManager):
-    """
-    Manager personnalisé pour le modèle User. Permet de créer des utilisateurs et des superutilisateurs.
-    """
     def create_user(self, email=None, phone_number=None, password=None, **extra_fields):
-        """
-        Crée un utilisateur avec un e-mail ou un numéro de téléphone.
-
-        Args:
-            email (str): L'adresse e-mail de l'utilisateur.
-            phone_number (str): Le numéro de téléphone de l'utilisateur.
-            password (str): Le mot de passe de l'utilisateur.
-
-        Returns:
-            User: L'utilisateur créé.
-        """
         if not email and not phone_number:
             raise ValueError("L'utilisateur doit avoir un email ou un numéro de téléphone")
 
@@ -32,16 +18,6 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
-        """
-        Crée un superutilisateur avec des privilèges d'administration.
-
-        Args:
-            email (str): L'adresse e-mail du superutilisateur.
-            password (str): Le mot de passe du superutilisateur.
-
-        Returns:
-            User: Le superutilisateur créé.
-        """
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
 
@@ -53,9 +29,6 @@ class UserManager(BaseUserManager):
         return self.create_user(email=email, password=password, **extra_fields)
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """
-    Modèle d'utilisateur personnalisé.
-    """
     email = models.EmailField(unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
     otp = models.CharField(max_length=128, null=True, blank=True)
@@ -79,15 +52,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.email if self.email else self.phone_number
 
     def is_otp_valid(self, otp):
-        """
-        Vérifie si le code OTP est valide (correspondant et non expiré).
-
-        Args:
-            otp (str): Le code OTP à vérifier.
-
-        Returns:
-            bool: True si le code OTP est valide, sinon False.
-        """
         if self.otp and self.otp_created_at:
             expiration_time = self.otp_created_at + timedelta(minutes=10)
             otp_hash = hashlib.sha256(otp.encode('utf-8')).hexdigest()
@@ -95,48 +59,21 @@ class User(AbstractBaseUser, PermissionsMixin):
         return False
 
     def generate_reset_token(self):
-        """
-        Génère un token de réinitialisation et définit sa date d'expiration.
-        """
         self.reset_token = str(uuid.uuid4())
         self.reset_token_expiration = timezone.now() + timedelta(hours=1)
         self.save()
 
     def is_reset_token_valid(self, token):
-        """
-        Vérifie si le token de réinitialisation est valide (correspondant et non expiré).
-
-        Args:
-            token (str): Le token à vérifier.
-
-        Returns:
-            bool: True si le token est valide, sinon False.
-        """
         return self.reset_token == token and self.reset_token_expiration and timezone.now() <= self.reset_token_expiration
 
     def lock_account(self, minutes=10):
-        """
-        Verrouille le compte de l'utilisateur pour une durée déterminée.
-
-        Args:
-            minutes (int): Durée du verrouillage en minutes.
-        """
         self.locked_until = timezone.now() + timedelta(minutes=minutes)
         self.save()
 
     def is_account_locked(self):
-        """
-        Vérifie si le compte de l'utilisateur est actuellement verrouillé.
-
-        Returns:
-            bool: True si le compte est verrouillé, sinon False.
-        """
         return self.locked_until and timezone.now() < self.locked_until
 
 class PasswordResetAttempt(models.Model):
-    """
-    Modèle pour suivre les tentatives de réinitialisation de mot de passe d'un utilisateur.
-    """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reset_attempts')
     requested_at = models.DateTimeField(auto_now_add=True)
     ip_address = models.CharField(max_length=45, null=True, blank=True)

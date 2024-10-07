@@ -1,85 +1,55 @@
-# Fonctionnalité d'Authentification - Documentation
+# Authentification & Gestion des Utilisateurs
 
 ## OVERVIEW
 
-Cette fonctionnalité d'authentification a été développée pour offrir un système de gestion des utilisateurs sécurisé et complet, intégrant des fonctionnalités d'inscription, de connexion, de réinitialisation de mot de passe, et de vérification OTP. Le système est conçu en utilisant Django et Django REST Framework, tout en respectant les bonnes pratiques de sécurité et de modularisation.
+Ce document fournit une description complète et détaillée de la fonctionnalité d'authentification et de gestion des utilisateurs de l'application. Il inclut les fonctionnalités, le fonctionnement général, les différents endpoints disponibles, leurs paramètres, et les recommandations pour renforcer la sécurité.
 
-## STRUCTURE
+## Fonctionnalité
 
-Voici les principaux fichiers utilisés pour implémenter cette fonctionnalité d'authentification :
+La fonctionnalité d'authentification permet aux utilisateurs de s'inscrire, de se connecter, de vérifier leur identité via OTP (One-Time Password), et de réinitialiser leur mot de passe. Cette fonctionnalité est construite sur une API REST, sécurisée par JWT (JSON Web Token), et comprend des mesures de sécurité renforcées telles que des verrous de compte en cas de tentatives échouées répétées et des alertes de connexion suspectes.
 
-- **models.py** : Contient les modèles `User` et `PasswordResetAttempt`, qui représentent respectivement les utilisateurs et les tentatives de réinitialisation de mot de passe.
-- **serializers.py** : Contient les sérialiseurs `UserSerializer` et `PasswordResetAttemptSerializer` pour convertir les objets du modèle en JSON et vice-versa.
-- **views.py** : Contient le `UserViewSet` qui gère toutes les actions possibles sur les utilisateurs, comme l'inscription, la vérification OTP, la connexion, et la réinitialisation du mot de passe.
-- **notifications.py** : Fichier utilitaire dédié à l'envoi de notifications, incluant l'envoi de codes OTP par e-mail et SMS, ainsi que des alertes de connexion.
-- **utils.py** : Contient la fonction `generate_otp`, qui génère un code OTP et le hache pour garantir la sécurité.
-- **urls.py** : Fichier qui configure les routes pour accéder aux différentes fonctionnalités liées à l'authentification.
+1. **Inscription** : Enregistrement de nouveaux utilisateurs via e-mail ou numéro de téléphone.
+2. **Vérification OTP** : Envoi d'un OTP (One-Time Password) pour vérifier les nouveaux utilisateurs ou réinitialiser un mot de passe.
+3. **Connexion** : Authentification des utilisateurs via e-mail et mot de passe.
+4. **Réinitialisation du mot de passe** : Envoi d'un lien de réinitialisation du mot de passe.
+5. **Déconnexion** : Blacklist des tokens pour invalider les sessions en cours.
+6. **Gestion des Verrous** : Verrouillage temporaire des comptes après plusieurs tentatives échouées.
+7. **Tokens Invités** : Utilisation d'un token temporaire pour les utilisateurs non vérifiés afin de permettre des opérations limitées, notamment la validation de son compte.
 
-## ENDPOINTS
+## ENDPOINTS DISPONIBLES
 
-Voici les endpoints disponibles pour cette fonctionnalité d'authentification :
+| Endpoint                         | Méthode | Permission      | Description                                                                     | Paramètres                                                                                                                                               | Réponse                                                                                       |
+| -------------------------------- | ------- | --------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `/users/register/`               | POST    | AllowAny        | Permet à un utilisateur de s'inscrire via e-mail ou numéro de téléphone         | `email` : Adresse e-mail (optionnel) <br> `phone_number` : Numéro de téléphone (optionnel) <br> `password` : Mot de passe (requis si `email` est fourni) | `guest_token` : Token temporaire <br> `message` : Confirmation d'inscription et envoi d'OTP   |
+| `/users/verify-otp/`             | POST    | AllowAny        | Vérifie l'identité de l'utilisateur avec un OTP                                 | Headers: `Authorization` : `Bearer {guest_token}` <br> `otp` : Code OTP envoyé à l'utilisateur                                                           | `message` : Confirmation de vérification <br> `refresh` : Token JWT <br> `access` : Token JWT |
+| `/users/login/`                  | POST    | AllowAny        | Authentifie l'utilisateur par e-mail et mot de passe                            | `email` : Adresse e-mail <br> `password` : Mot de passe                                                                                                  | `refresh` : Token JWT <br> `access` : Token JWT                                               |
+| `/users/resend-otp/`             | POST    | AllowAny        | Renvoyer un OTP si non validé                                                   | Headers: `Authorization` : `Bearer {guest_token}`                                                                                                        | `message` : Confirmation de renvoi d'OTP                                                      |
+| `/users/logout/`                 | POST    | IsAuthenticated | Déconnecte un utilisateur en blacklistant le refresh token                      | `refresh_token` : Token de rafraîchissement à blacklister                                                                                                | `message` : Confirmation de déconnexion                                                       |
+| `/users/request-password-reset/` | POST    | AllowAny        | Demande de réinitialisation de mot de passe via un lien envoyé par e-mail       | `email` : Adresse e-mail de l'utilisateur                                                                                                                | `message` : Confirmation d'envoi d'e-mail de réinitialisation                                 |
+| `/users/reset-password/{token}/` | POST    | AllowAny        | Réinitialise le mot de passe via un lien contenant un token de réinitialisation | `new_password` : Nouveau mot de passe                                                                                                                    | `message` : Confirmation de réinitialisation du mot de passe                                  |
 
-| Endpoint                              | Description                                                                    | Paramètres requis                                                                           |
-| ------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `POST /users/register/`               | Inscription d'un utilisateur via e-mail ou numéro de téléphone.                | `email` OU `phone_number`, et un `password` est requis si l'inscription se fait par e-mail. |
-| `POST /users/verify-otp/`             | Vérification du code OTP reçu.                                                 | `otp` (le token JWT est utilisé pour identifier l'utilisateur).                             |
-| `POST /users/login/`                  | Connexion d'un utilisateur avec e-mail et mot de passe ou numéro de téléphone. | `email` ET `password`, ou `phone_number` ET `password`.                                     |
-| `POST /users/logout/`                 | Déconnexion d'un utilisateur en révoquant le token de rafraîchissement.        | `refresh_token`.                                                                            |
-| `POST /users/request-password-reset/` | Demande de réinitialisation de mot de passe par e-mail.                        | `email`.                                                                                    |
-| `POST /users/reset-password/<token>/` | Réinitialisation du mot de passe avec un token de réinitialisation.            | `new_password`.                                                                             |
-| `POST /users/resend-otp/`             | Renvoi d'un nouveau code OTP.                                                  | Utilisation du token JWT pour s'authentifier.                                               |
+## POINTS PARTICULIER POUR L'INTÉGRATION FRONT-END
 
-## FEATURES
+### AUTHENTIFICATION
 
-### 1. Inscription
+- **Inscription et Connexion** : Après l'inscription, un `guest_token` est retourné. Ce token doit être utilisé pour valider l'utilisateur en fournissant l'OTP.
+- **Gestion des Tokens** : Une fois l'OTP validé, les tokens `refresh` et `access` sont générés. Il faut les stocker de manière sécurisée (par exemple, dans le stockage sécurisé du navigateur).
+- **Renvoi de l'OTP** : Si un OTP expire, il faut utiliser le `guest_token` pour demander un renvoi.
+- **Réinitialisation de Mot de Passe** : Après avoir demandé la réinitialisation, il faut rediriger l'utilisateur vers un formulaire pour entrer un nouveau mot de passe.
 
-- Les utilisateurs peuvent s'inscrire en utilisant soit un e-mail, soit un numéro de téléphone.
-- Un mot de passe est requis pour l'inscription par e-mail.
-- Un code OTP (One-Time Password) est envoyé à l'utilisateur pour vérifier l'inscription. Ce code est envoyé par e-mail ou par SMS selon la méthode choisie.
-- Un token JWT temporaire est également généré pour l'utilisateur, afin de lier sa session jusqu'à la validation de l'OTP.
+### SÉCURITÉ
 
-### 2. Vérification OTP
+- **Protection CSRF** : Toutes les requêtes sécurisées doivent utilisent un header `Authorization` contenant le `Bearer` token approprié.
+- **Expiration des Tokens** : L'`access token` expire après 15 minutes. Le `refresh token` peut être utilisé pour obtenir un nouvel `access token` jusqu'à son expiration (1 jour).
+- **Verrouillage du Compte** : Après plusieurs tentatives échouées (3 pour l'OTP, 5 pour la connexion), le compte sera verrouillé pendant 10 minutes.
 
-- L'utilisateur doit entrer le code OTP reçu pour activer son compte.
-- L'utilisateur entre uniquement le code OTP sans avoir besoin de ressaisir son e-mail ou numéro de téléphone, grâce au token JWT.
-- Le code OTP est valide pendant 10 minutes et est sécurisé par un hachage SHA256.
-- Si l'OTP expire ou est perdu, l'utilisateur peut demander un nouvel OTP via l'endpoint de renvoi d'OTP.
-- Après 3 tentatives de saisie incorrecte du code OTP, le compte est temporairement verrouillé pour 10 minutes.
+## RENFORCEMENTS ENVISAGEABLES
 
-### 3. Connexion
-
-- Les utilisateurs peuvent se connecter en utilisant leur e-mail et leur mot de passe, ou leur numéro de téléphone.
-- Lors de la connexion avec un numéro de téléphone, un nouveau code OTP est envoyé pour validation.
-- Après 5 tentatives de connexion incorrecte, le compte est temporairement verrouillé pour 10 minutes.
-- Si une connexion est effectuée depuis un nouvel appareil ou une nouvelle adresse IP, une alerte est envoyée à l'utilisateur par e-mail pour assurer la sécurité.
-
-### 4. Réinitialisation de Mot de Passe
-
-- Les utilisateurs peuvent demander une réinitialisation de mot de passe en fournissant leur e-mail.
-- Un lien de réinitialisation est envoyé par e-mail et est valide pendant 1 heure.
-- Une fois le mot de passe réinitialisé, le token de réinitialisation est invalidé.
-
-### 5. Déconnexion
-
-- Les utilisateurs peuvent se déconnecter en révoquant leur token de rafraîchissement JWT, ce qui empêche toute utilisation ultérieure du token.
-
-## TECHNOLOGIES
-
-- **Django & Django REST Framework** : Ces frameworks ont été utilisés pour gérer les utilisateurs et fournir une API RESTful. Le choix de Django est motivé par sa robustesse et sa sécurité intégrée, tandis que Django REST Framework simplifie la création d'API.
-- **JWT (JSON Web Token)** : Utilisé pour l'authentification et la gestion des sessions. Les tokens de rafraîchissement permettent de prolonger les sessions utilisateur sans nécessiter une nouvelle connexion fréquente.
-- **bcrypt & hashlib** : Utilisés pour le hachage des mots de passe et des OTP. `bcrypt` est utilisé pour les mots de passe des utilisateurs, offrant une sécurité renforcée, tandis que `hashlib` est utilisé pour hacher les OTP de manière plus légère.
-- **Email & SMS Notifications** : Les notifications sont gérées via le module `notifications.py`, et incluent des e-mails de vérification et des alertes de sécurité.
-
-## SÉCURITÉ
-
-La sécurité est un aspect crucial de cette fonctionnalité d'authentification. Voici quelques mesures prises :
-
-- **Verrouillage de Compte** : Après plusieurs tentatives incorrectes (OTP ou mot de passe), le compte est verrouillé temporairement pour empêcher des attaques par force brute.
-- **Hachage des Données Sensibles** : Les mots de passe et les codes OTP sont toujours hachés avant d'être stockés, afin de garantir leur confidentialité.
-- **Alerte de Connexion** : Une alerte est envoyée à l'utilisateur lorsque sa connexion est effectuée depuis un nouvel appareil ou une nouvelle adresse IP, afin de prévenir les connexions non autorisées.
-
-## AMÉLIORATIONS ENVISAGÉES (06/10/2024)
-
-- **Tests Unitaires** : Bien que le code soit fonctionnel, il serait bénéfique d'ajouter des tests unitaires complets, notamment pour les fonctionnalités critiques comme la vérification OTP et la réinitialisation de mot de passe.
-- **Gestion des Exceptions** : Certains points pourraient être améliorés pour mieux gérer les erreurs, en particulier lors de l'envoi de notifications, afin de proposer une meilleure expérience utilisateur en cas d'échec.
-- **Notifications via un Service Tiers** : Actuellement, l'envoi de SMS est simulé. En production, il serait préférable d'intégrer un service comme Twilio pour les notifications par SMS.
+1. **Double Facteur d'Authentification (2FA)** : Ajouter une validation 2FA avec Google Authenticator ou en envoyant un second OTP.
+2. **Rate Limiting** : Utiliser un mécanisme de rate limiting pour éviter les attaques par force brute sur les endpoints d'inscription, de connexion et de réinitialisation de mot de passe.
+3. **Sessions Concurrentes** : Empêcher la connexion simultanée depuis plusieurs appareils en limitant à une session active par utilisateur.
+4. **Validation de Lieu et d'Appareil** : Notifier les utilisateurs lorsque de nouvelles connexions sont détectées à partir de nouveaux lieux ou appareils.
+5. **Protocole OAuth2/OpenID Connect** : Pour une authentification centralisée, envisager l'implémentation d'OAuth2 ou OpenID Connect.
+6. **Audit et Journaux d'Accès** : Enregistrer les tentatives de connexion, les réinitialisations de mot de passe, et les connexions depuis des IP ou appareils non reconnus.
+7. **Protection contre l'énumération des comptes** : Remplacer les messages d'erreur explicites par des messages génériques pour éviter l'énumération des comptes.
+8. **Implémentation de Django Rate Limit en production** : Ajouter les configurations nécessaires pour le rate-limiting de Django afin de limiter le nombre de requêtes par utilisateur et renforcer la sécurité.
