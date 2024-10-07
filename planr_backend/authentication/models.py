@@ -5,7 +5,6 @@ from datetime import timedelta
 import uuid
 import hashlib
 
-
 class UserManager(BaseUserManager):
     """
     Manager personnalisé pour le modèle User. Permet de créer des utilisateurs et des superutilisateurs.
@@ -52,7 +51,6 @@ class UserManager(BaseUserManager):
             raise ValueError('Le superutilisateur doit avoir is_superuser=True.')
 
         return self.create_user(email=email, password=password, **extra_fields)
-
 
 class User(AbstractBaseUser, PermissionsMixin):
     """
@@ -134,7 +132,6 @@ class User(AbstractBaseUser, PermissionsMixin):
             bool: True si le compte est verrouillé, sinon False.
         """
         return self.locked_until and timezone.now() < self.locked_until
-
 
 class PasswordResetAttempt(models.Model):
     """
