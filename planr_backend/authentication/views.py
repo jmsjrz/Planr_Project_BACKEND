@@ -1,5 +1,3 @@
-# views.py
-
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,7 +14,7 @@ from django.conf import settings
 from datetime import timedelta
 from .models import User, PasswordResetAttempt
 from .serializers import UserSerializer
-from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp
+from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp, send_email
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,7 +34,6 @@ class InactiveUserJWTAuthentication(JWTAuthentication):
         except self.user_model.DoesNotExist:
             raise AuthenticationFailed(_("Utilisateur non trouvé."), code="user_not_found")
 
-        # Ne pas vérifier user.is_active ici
         return user
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -74,6 +71,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 'guest_token': str(guest_token)
             })
 
+        except PermissionDenied as e:
+            logger.error(f"Erreur lors de l'enregistrement : {e}")
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             logger.error(f"Erreur lors de l'enregistrement : {e}")
             return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -108,13 +108,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 user.set_password(password)
             user.save()
 
-    @action(
-        detail=False,
-        methods=['post'],
-        url_path='verify-otp',
-        permission_classes=[AllowAny],
-        authentication_classes=[InactiveUserJWTAuthentication]
-    )
+    @action(detail=False, methods=['post'], url_path='verify-otp', permission_classes=[AllowAny], authentication_classes=[InactiveUserJWTAuthentication])
     def verify_otp(self, request):
         otp = request.data.get('otp')
         auth_header = request.headers.get('Authorization')
@@ -156,13 +150,7 @@ class UserViewSet(viewsets.ModelViewSet):
             logger.error(f"Erreur lors de la vérification de l'OTP : {e}")
             return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(
-        detail=False,
-        methods=['post'],
-        url_path='resend-otp',
-        permission_classes=[AllowAny],
-        authentication_classes=[InactiveUserJWTAuthentication]
-    )
+    @action(detail=False, methods=['post'], url_path='resend-otp', permission_classes=[AllowAny], authentication_classes=[InactiveUserJWTAuthentication])
     def resend_otp(self, request):
         auth_header = request.headers.get('Authorization')
 
@@ -304,7 +292,7 @@ class UserViewSet(viewsets.ModelViewSet):
             reset_link = f"{settings.BASE_URL}/auth/reset-password/{user.reset_token}/"
 
             # Envoi de l'e-mail de réinitialisation
-            send_email_otp(user.email, f'Cliquez ici pour réinitialiser votre mot de passe : {reset_link}')
+            send_email(user.email, f'Cliquez ici pour réinitialiser votre mot de passe : {reset_link}', [user.email])
             return Response({'message': "Un e-mail de réinitialisation a été envoyé."})
 
         except Exception as e:
