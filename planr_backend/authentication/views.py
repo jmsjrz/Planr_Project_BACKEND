@@ -199,38 +199,68 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
         email = request.data.get('email')
+        phone_number = request.data.get('phone_number')
         password = request.data.get('password')
 
-        if not email or not password:
-            return Response({'error': "L'e-mail et le mot de passe sont requis."}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            user = get_object_or_404(User, email=email)
+            if not email and not phone_number:
+                raise ValueError("L'e-mail ou le numéro de téléphone est requis pour se connecter.")
 
-            if user.is_account_locked():
-                return Response({'error': "Compte verrouillé en raison de multiples tentatives de connexion échouées."}, status=status.HTTP_403_FORBIDDEN)
+            user = None
+            if email:
+                user = get_object_or_404(User, email=email)
+            elif phone_number:
+                user = get_object_or_404(User, phone_number=phone_number)
 
-            if not user.is_active:
-                return Response({'error': "Votre compte n'est pas activé. Veuillez vérifier votre e-mail pour activer votre compte."}, status=status.HTTP_403_FORBIDDEN)
+            # Si un mot de passe est fourni, tente de se connecter normalement
+            if password:
+                if user.is_account_locked():
+                    raise PermissionDenied("Compte verrouillé en raison de multiples tentatives de connexion échouées.")
 
-            if user.check_password(password):
-                user.failed_login_attempts = 0
+                if not user.is_active:
+                    raise PermissionDenied("Votre compte n'est pas activé. Veuillez vérifier votre e-mail pour activer votre compte.")
+
+                if user.check_password(password):
+                    user.failed_login_attempts = 0
+                    user.save()
+
+                    refresh = RefreshToken.for_user(user)
+                    return Response({
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                    })
+
+                user.failed_login_attempts += 1
+                if user.failed_login_attempts >= 5:
+                    user.lock_account(minutes=10)
+                    raise PermissionDenied("Compte verrouillé après 5 tentatives échouées.")
+
                 user.save()
+                raise ValueError("Mot de passe incorrect.")
 
-                refresh = RefreshToken.for_user(user)
-                return Response({
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                })
+            # Si aucun mot de passe n'est fourni, envoie un OTP
+            otp, hashed_otp = generate_and_hash_otp()
+            if user.email:
+                send_email_otp(user.email, otp)
+            elif user.phone_number:
+                send_sms_otp(user.phone_number, otp)
 
-            user.failed_login_attempts += 1
-            if user.failed_login_attempts >= 5:
-                user.lock_account(minutes=10)
-                return Response({'error': "Compte verrouillé après 5 tentatives échouées."}, status=status.HTTP_403_FORBIDDEN)
-
+            user.otp = hashed_otp
+            user.otp_created_at = timezone.now()
             user.save()
-            return Response({'error': "Mot de passe incorrect."}, status=status.HTTP_400_BAD_REQUEST)
 
+            guest_token = AccessToken.for_user(user)
+            guest_token['role'] = 'guest'
+            guest_token['can_verify_otp'] = True
+            guest_token.set_exp(lifetime=timedelta(minutes=15))  # Expiration courte
+
+            return Response({
+                'message': "Un OTP a été envoyé pour vérification.",
+                'guest_token': str(guest_token)
+            })
+
+        except (ValueError, PermissionDenied) as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Erreur lors de la connexion : {e}")
             return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
