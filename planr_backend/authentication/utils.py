@@ -17,6 +17,27 @@ def generate_and_hash_otp():
     hashed_otp = hashlib.sha256(otp.encode('utf-8')).hexdigest()  # Hachage de l'OTP avec SHA256
     return otp, hashed_otp
 
+def send_email(subject, message, recipient_list):
+    """
+    Envoie un e-mail à l'utilisateur.
+
+    Args:
+        subject (str): Le sujet de l'e-mail.
+        message (str): Le contenu de l'e-mail.
+        recipient_list (list): Liste des destinataires.
+    """
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            recipient_list,
+            fail_silently=False,
+        )
+        logger.info(f"E-mail envoyé à {', '.join(recipient_list)}")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi de l'e-mail à {', '.join(recipient_list)}: {e}")
+
 def send_email_otp(email, otp):
     """
     Envoie un code OTP par e-mail à l'utilisateur.
@@ -25,17 +46,7 @@ def send_email_otp(email, otp):
         email (str): L'adresse e-mail de l'utilisateur.
         otp (str): Le code OTP à envoyer.
     """
-    try:
-        send_mail(
-            'Votre code de vérification',
-            f'Votre code de vérification est : {otp}',
-            settings.DEFAULT_FROM_EMAIL,
-            [email],
-            fail_silently=False,
-        )
-        logger.info(f"Code OTP envoyé à l'e-mail {email}")
-    except Exception as e:
-        logger.error(f"Erreur lors de l'envoi du code OTP à {email}: {e}")
+    send_email('Votre code de vérification', f'Votre code de vérification est : {otp}', [email])
 
 def send_sms_otp(phone_number, otp):
     """
@@ -57,13 +68,5 @@ def send_login_alert(email, ip_address, user_agent):
         ip_address (str): L'adresse IP utilisée lors de la connexion.
         user_agent (str): Le user agent de l'appareil utilisé lors de la connexion.
     """
-    try:
-        send_mail(
-            'Nouvelle connexion détectée',
-            f'Une nouvelle connexion a été effectuée sur votre compte depuis l\'adresse IP {ip_address} et l\'appareil {user_agent}.',
-            'no-reply@planr.dev',
-            [email],
-        )
-        logger.info(f"Alerte de connexion envoyée à l'e-mail {email}")
-    except Exception as e:
-        logger.error(f"Erreur lors de l'envoi de l'alerte de connexion à {email}: {e}")
+    message = f"Une nouvelle connexion a été effectuée sur votre compte depuis l'adresse IP {ip_address} et l'appareil {user_agent}."
+    send_email('Nouvelle connexion détectée', message, [email])
