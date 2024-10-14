@@ -108,6 +108,33 @@ class UserViewSet(viewsets.ModelViewSet):
                 user.set_password(password)
             user.save()
 
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    def check_registration(self, request):
+        """
+        Vérifie si l'utilisateur a un OTP en attente de validation.
+        """
+        email = request.data.get('email')
+        phone_number = request.data.get('phone_number')
+    
+        user = None
+        if email:
+            user = User.objects.filter(email=email).first()
+        elif phone_number:
+            user = User.objects.filter(phone_number=phone_number).first()
+    
+        if user and user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
+            guest_token = AccessToken.for_user(user)
+            guest_token['role'] = 'guest'
+            guest_token['can_verify_otp'] = True
+            guest_token.set_exp(lifetime=timedelta(minutes=15))
+    
+            return Response({
+                'message': "Utilisateur en attente de validation OTP.",
+                'guest_token': str(guest_token)
+            }, status=status.HTTP_200_OK)
+    
+        return Response({'message': "Aucun utilisateur en attente de validation OTP."}, status=status.HTTP_404_NOT_FOUND)
+
     @action(detail=False, methods=['post'], url_path='verify-otp', permission_classes=[AllowAny], authentication_classes=[InactiveUserJWTAuthentication])
     def verify_otp(self, request):
         otp = request.data.get('otp')
