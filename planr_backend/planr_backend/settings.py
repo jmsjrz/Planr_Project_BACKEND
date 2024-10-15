@@ -14,6 +14,7 @@ BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')  # Utilise localhost p
 SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG') == 'True'
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
 # Définition des applications installées
 INSTALLED_APPS = [
@@ -49,7 +50,6 @@ MIDDLEWARE = [
 
 # Configuration des CORS
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
     "http://localhost:5173",
 ]
 CORS_ALLOW_CREDENTIALS = True
