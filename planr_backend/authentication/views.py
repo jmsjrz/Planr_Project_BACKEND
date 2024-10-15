@@ -13,11 +13,12 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from datetime import timedelta
+from django.http import Http404
 from .models import User, PasswordResetAttempt
 from .serializers import UserSerializer
 from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp, send_email
 import logging
-
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -336,42 +337,26 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'error': "Le nouveau mot de passe est requis."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Tenter de récupérer l'utilisateur avec le jeton de réinitialisation
             user = get_object_or_404(User, reset_token=token)
 
+            # Vérifier si le jeton a expiré
             if user.reset_token_expiration < timezone.now():
                 return Response({'error': "Le jeton de réinitialisation a expiré."}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Définir le nouveau mot de passe
             user.set_password(new_password)
+
+            # Invalider le jeton en le supprimant
             user.reset_token = None
             user.reset_token_expiration = None
             user.save()
-            return Response({'message': "Mot de passe réinitialisé avec succès."})
 
-        except Exception as e:
-            logger.error(f"Erreur lors de la réinitialisation du mot de passe : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class ResetPasswordView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request, token):
-        new_password = request.data.get('new_password')
-
-        if not new_password:
-            return Response({'error': "Le nouveau mot de passe est requis."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user = get_object_or_404(User, reset_token=token)
-
-            if user.reset_token_expiration < timezone.now():
-                return Response({'error': "Le jeton de réinitialisation a expiré."}, status=status.HTTP_400_BAD_REQUEST)
-
-            user.set_password(new_password)
-            user.reset_token = None
-            user.reset_token_expiration = None
-            user.save()
             return Response({'message': "Mot de passe réinitialisé avec succès."}, status=status.HTTP_200_OK)
 
+        except Http404:
+            # Le jeton est invalide ou a déjà été utilisé
+            return Response({'error': "Jeton de réinitialisation invalide ou déjà utilisé."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Erreur lors de la réinitialisation du mot de passe : {e}")
             return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
