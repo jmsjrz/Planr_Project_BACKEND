@@ -10,39 +10,33 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from datetime import timedelta
 from django.http import Http404
 from .models import User, PasswordResetAttempt
 from .serializers import UserSerializer
 from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp, send_email
+from .messages import ErrorMessages, SuccessMessages  # Centralisation des messages
 import logging
-import uuid
 
 logger = logging.getLogger(__name__)
 
 class InactiveUserJWTAuthentication(JWTAuthentication):
     def get_user(self, validated_token):
-        """
-        Récupère l'utilisateur sans vérifier si is_active est True.
-        """
         try:
             user_id = validated_token[api_settings.USER_ID_CLAIM]
         except KeyError:
-            raise InvalidToken(_("Le token ne contient pas d'identification d'utilisateur reconnaissable."))
+            raise InvalidToken(ErrorMessages.TOKEN_INVALID)
 
         try:
             user = self.user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id})
         except self.user_model.DoesNotExist:
-            raise AuthenticationFailed(_("Utilisateur non trouvé."), code="user_not_found")
+            raise AuthenticationFailed(ErrorMessages.USER_NOT_FOUND)
 
         return user
 
+
 class UserViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet pour gérer l'inscription, la vérification OTP, la connexion et la réinitialisation du mot de passe.
-    """
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
@@ -55,13 +49,19 @@ class UserViewSet(viewsets.ModelViewSet):
 
         try:
             if email:
+                if User.objects.filter(email=email).exists():
+                    return Response({'error': ErrorMessages.EMAIL_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
                 if not password:
-                    return Response({'error': "Un mot de passe est requis pour l'inscription par e-mail."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({'error': ErrorMessages.PASSWORD_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
                 self.process_registration(email, 'email', password)
+
             elif phone_number:
+                if User.objects.filter(phone_number=phone_number).exists():
+                    return Response({'error': ErrorMessages.PHONE_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
                 self.process_registration(phone_number, 'phone_number')
+
             else:
-                return Response({'error': "Vous devez fournir un e-mail ou un numéro de téléphone."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': ErrorMessages.LOGIN_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
             user = User.objects.get(email=email) if email else User.objects.get(phone_number=phone_number)
             guest_token = AccessToken.for_user(user)
@@ -70,22 +70,22 @@ class UserViewSet(viewsets.ModelViewSet):
             guest_token.set_exp(lifetime=timedelta(minutes=15))
 
             return Response({
-                'message': "Utilisateur enregistré, un OTP a été envoyé pour vérification.",
+                'message': SuccessMessages.REGISTRATION_SUCCESS,
                 'guest_token': str(guest_token)
-            })
+            }, status=status.HTTP_201_CREATED)
 
         except PermissionDenied as e:
             logger.error(f"Erreur lors de l'enregistrement : {e}")
             return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             logger.error(f"Erreur lors de l'enregistrement : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def process_registration(self, identifier, identifier_type, password=None):
         user = User.objects.filter(**{identifier_type: identifier}).first()
 
         if user and user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
-            raise PermissionDenied("Vous devez attendre 15 minutes avant de demander un nouveau code OTP.")
+            raise PermissionDenied(ErrorMessages.OTP_RESEND_LIMIT)
 
         otp, hashed_otp = generate_and_hash_otp()
         if identifier_type == 'email':
@@ -113,30 +113,27 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def check_registration(self, request):
-        """
-        Vérifie si l'utilisateur a un OTP en attente de validation.
-        """
         email = request.data.get('email')
         phone_number = request.data.get('phone_number')
-    
+
         user = None
         if email:
             user = User.objects.filter(email=email).first()
         elif phone_number:
             user = User.objects.filter(phone_number=phone_number).first()
-    
+
         if user and user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
             guest_token = AccessToken.for_user(user)
             guest_token['role'] = 'guest'
             guest_token['can_verify_otp'] = True
             guest_token.set_exp(lifetime=timedelta(minutes=15))
-    
+
             return Response({
-                'message': "Utilisateur en attente de validation OTP.",
+                'message': SuccessMessages.OTP_RESEND_SUCCESS,
                 'guest_token': str(guest_token)
             }, status=status.HTTP_200_OK)
-    
-        return Response({'message': "Aucun utilisateur en attente de validation OTP."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({'error': ErrorMessages.USER_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=False, methods=['post'], url_path='verify-otp', permission_classes=[AllowAny], authentication_classes=[InactiveUserJWTAuthentication])
     def verify_otp(self, request):
@@ -144,16 +141,19 @@ class UserViewSet(viewsets.ModelViewSet):
         auth_header = request.headers.get('Authorization')
 
         if not auth_header:
-            return Response({'error': "Le token JWT est requis."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.JWT_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             auth = InactiveUserJWTAuthentication()
             validated_token = auth.get_validated_token(auth_header.split(' ')[1])
 
             if not validated_token.get('can_verify_otp'):
-                raise PermissionDenied("Le token ne permet pas de vérifier l'OTP.")
+                raise PermissionDenied(ErrorMessages.UNAUTHORIZED_ACCESS)
 
             user = auth.get_user(validated_token)
+
+            if user.is_account_locked():
+                return Response({'error': ErrorMessages.ACCOUNT_LOCKED}, status=status.HTTP_403_FORBIDDEN)
 
             if user.is_otp_valid(otp):
                 user.is_active = True
@@ -161,7 +161,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 user.save()
                 refresh = RefreshToken.for_user(user)
                 return Response({
-                    'message': "Compte vérifié avec succès.",
+                    'message': SuccessMessages.OTP_VERIFICATION_SUCCESS,
                     'refresh': str(refresh),
                     'access': str(refresh.access_token),
                 })
@@ -169,32 +169,35 @@ class UserViewSet(viewsets.ModelViewSet):
             user.failed_otp_attempts += 1
             if user.failed_otp_attempts >= 3:
                 user.lock_account(minutes=10)
-                return Response({'error': "Compte verrouillé après plusieurs tentatives OTP infructueuses."}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': ErrorMessages.OTP_MAX_ATTEMPTS}, status=status.HTTP_403_FORBIDDEN)
 
             user.save()
-            return Response({'error': "Le code OTP est invalide ou expiré."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.OTP_INVALID}, status=status.HTTP_400_BAD_REQUEST)
 
         except (AuthenticationFailed, PermissionDenied) as e:
             return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             logger.error(f"Erreur lors de la vérification de l'OTP : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], url_path='resend-otp', permission_classes=[AllowAny], authentication_classes=[InactiveUserJWTAuthentication])
     def resend_otp(self, request):
         auth_header = request.headers.get('Authorization')
 
         if not auth_header:
-            return Response({'error': "Le token JWT est requis."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.JWT_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             auth = InactiveUserJWTAuthentication()
             validated_token = auth.get_validated_token(auth_header.split(' ')[1])
 
             if validated_token.get('role') != 'guest':
-                return Response({'error': "Permission refusée. Seuls les utilisateurs invités peuvent demander un renvoi d'OTP."}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': ErrorMessages.INVALID_CREDENTIALS}, status=status.HTTP_403_FORBIDDEN)
 
             user = auth.get_user(validated_token)
+
+            if user.otp_created_at and timezone.now() < user.otp_created_at + timedelta(minutes=15):
+                return Response({'error': ErrorMessages.OTP_RESEND_LIMIT}, status=status.HTTP_403_FORBIDDEN)
 
             otp, hashed_otp = generate_and_hash_otp()
             user.otp = hashed_otp
@@ -206,13 +209,13 @@ class UserViewSet(viewsets.ModelViewSet):
             elif user.phone_number:
                 send_sms_otp(user.phone_number, otp)
 
-            return Response({'message': "Nouveau code OTP envoyé."})
+            return Response({'message': SuccessMessages.OTP_RESEND_SUCCESS})
 
         except (AuthenticationFailed, PermissionDenied) as e:
             return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
         except Exception as e:
             logger.error(f"Erreur lors du renvoi de l'OTP : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
@@ -222,21 +225,24 @@ class UserViewSet(viewsets.ModelViewSet):
 
         try:
             if not email and not phone_number:
-                raise ValueError("L'e-mail ou le numéro de téléphone est requis pour se connecter.")
+                return Response({'error': ErrorMessages.LOGIN_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
             user = None
             if email:
-                user = get_object_or_404(User, email=email)
+                user = User.objects.filter(email=email).first()
+                if not user:
+                    return Response({'error': ErrorMessages.USER_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
             elif phone_number:
-                user = get_object_or_404(User, phone_number=phone_number)
+                user = User.objects.filter(phone_number=phone_number).first()
+                if not user:
+                    return Response({'error': ErrorMessages.USER_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
 
-            # Si un mot de passe est fourni, tente de se connecter normalement
             if password:
                 if user.is_account_locked():
-                    raise PermissionDenied("Compte verrouillé en raison de multiples tentatives de connexion échouées.")
+                    return Response({'error': ErrorMessages.ACCOUNT_LOCKED}, status=status.HTTP_403_FORBIDDEN)
 
                 if not user.is_active:
-                    raise PermissionDenied("Votre compte n'est pas activé. Veuillez vérifier votre e-mail pour activer votre compte.")
+                    return Response({'error': ErrorMessages.USER_INACTIVE}, status=status.HTTP_403_FORBIDDEN)
 
                 if user.check_password(password):
                     user.failed_login_attempts = 0
@@ -244,19 +250,19 @@ class UserViewSet(viewsets.ModelViewSet):
 
                     refresh = RefreshToken.for_user(user)
                     return Response({
+                        'message': SuccessMessages.LOGIN_SUCCESS,
                         'refresh': str(refresh),
                         'access': str(refresh.access_token),
-                    })
+                    }, status=status.HTTP_200_OK)
 
                 user.failed_login_attempts += 1
                 if user.failed_login_attempts >= 5:
                     user.lock_account(minutes=10)
-                    raise PermissionDenied("Compte verrouillé après 5 tentatives échouées.")
+                    return Response({'error': ErrorMessages.ACCOUNT_LOCKED}, status=status.HTTP_403_FORBIDDEN)
 
                 user.save()
-                raise ValueError("Mot de passe incorrect.")
+                return Response({'error': ErrorMessages.PASSWORD_MISMATCH}, status=status.HTTP_401_UNAUTHORIZED)
 
-            # Si aucun mot de passe n'est fourni, envoie un OTP
             otp, hashed_otp = generate_and_hash_otp()
             if user.email:
                 send_email_otp(user.email, otp)
@@ -270,47 +276,49 @@ class UserViewSet(viewsets.ModelViewSet):
             guest_token = AccessToken.for_user(user)
             guest_token['role'] = 'guest'
             guest_token['can_verify_otp'] = True
-            guest_token.set_exp(lifetime=timedelta(minutes=15))  # Expiration courte
+            guest_token.set_exp(lifetime=timedelta(minutes=15))
 
             return Response({
-                'message': "Un OTP a été envoyé pour vérification.",
+                'message': SuccessMessages.OTP_SENT,
                 'guest_token': str(guest_token)
-            })
+            }, status=status.HTTP_200_OK)
 
-        except (ValueError, PermissionDenied) as e:
+        except PermissionDenied as e:
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Erreur lors de la connexion : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def logout(self, request):
         refresh_token = request.data.get('refresh_token')
 
         if not refresh_token:
-            return Response({'error': "Le token de rafraîchissement est requis pour se déconnecter."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.JWT_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response({'message': "Déconnexion réussie."})
+            return Response({'message': SuccessMessages.LOGOUT_SUCCESS})
         except Exception as e:
             logger.error(f"Erreur lors de la déconnexion : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], url_path='request-password-reset', permission_classes=[AllowAny])
     def request_password_reset(self, request):
         email = request.data.get('email')
 
         if not email:
-            return Response({'error': "L'e-mail est requis pour réinitialiser le mot de passe."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.LOGIN_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = get_object_or_404(User, email=email)
 
             recent_attempt = PasswordResetAttempt.objects.filter(user=user).order_by('-requested_at').first()
             if recent_attempt and recent_attempt.requested_at > timezone.now() - timedelta(minutes=15):
-                return Response({'error': "Une demande de réinitialisation a déjà été faite récemment. Patientez 15 minutes."}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': ErrorMessages.RESET_LIMIT_REACHED}, status=status.HTTP_403_FORBIDDEN)
 
             PasswordResetAttempt.objects.create(
                 user=user,
@@ -321,42 +329,35 @@ class UserViewSet(viewsets.ModelViewSet):
             user.generate_reset_token()
             reset_link = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}/"
 
-            # Envoi de l'e-mail de réinitialisation
             send_email(user.email, f'Cliquez ici pour réinitialiser votre mot de passe : {reset_link}', [user.email])
-            return Response({'message': "Un e-mail de réinitialisation a été envoyé."})
+            return Response({'message': SuccessMessages.PASSWORD_RESET_EMAIL_SENT})
 
         except Exception as e:
             logger.error(f"Erreur lors de la demande de réinitialisation de mot de passe : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], url_path='reset-password/(?P<token>[^/.]+)', permission_classes=[AllowAny])
     def reset_password(self, request, token):
         new_password = request.data.get('new_password')
 
         if not new_password:
-            return Response({'error': "Le nouveau mot de passe est requis."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.PASSWORD_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Tenter de récupérer l'utilisateur avec le jeton de réinitialisation
             user = get_object_or_404(User, reset_token=token)
 
-            # Vérifier si le jeton a expiré
             if user.reset_token_expiration < timezone.now():
-                return Response({'error': "Le jeton de réinitialisation a expiré."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': ErrorMessages.RESET_TOKEN_INVALID}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Définir le nouveau mot de passe
             user.set_password(new_password)
-
-            # Invalider le jeton en le supprimant
             user.reset_token = None
             user.reset_token_expiration = None
             user.save()
 
-            return Response({'message': "Mot de passe réinitialisé avec succès."}, status=status.HTTP_200_OK)
+            return Response({'message': SuccessMessages.PASSWORD_RESET_SUCCESS}, status=status.HTTP_200_OK)
 
         except Http404:
-            # Le jeton est invalide ou a déjà été utilisé
-            return Response({'error': "Jeton de réinitialisation invalide ou déjà utilisé."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': ErrorMessages.RESET_TOKEN_INVALID}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Erreur lors de la réinitialisation du mot de passe : {e}")
-            return Response({'error': "Une erreur est survenue, veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from .messages import ErrorMessages, SuccessMessages
 from datetime import timedelta
 import uuid
 import hashlib
@@ -8,7 +9,7 @@ import hashlib
 class UserManager(BaseUserManager):
     def create_user(self, email=None, phone_number=None, password=None, **extra_fields):
         if not email and not phone_number:
-            raise ValueError("L'utilisateur doit avoir un email ou un numéro de téléphone")
+            raise ValueError(ErrorMessages.LOGIN_REQUIRED)
 
         email = self.normalize_email(email)
         user = self.model(email=email, phone_number=phone_number, **extra_fields)
