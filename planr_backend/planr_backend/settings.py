@@ -34,6 +34,7 @@ INSTALLED_APPS = [
 
     # Applications personnalisées
     'authentication',
+	'events'
 ]
 
 # Définition des middlewares

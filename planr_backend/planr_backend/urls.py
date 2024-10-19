@@ -8,6 +8,7 @@ router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='user')
 
 urlpatterns = [
-    path('', include('authentication.urls')),  # Inclure les URLs de l'application authentication
+    path('', include('authentication.urls')),
+    path('', include('events.urls')),
     path('admin/', admin.site.urls),
 ]
