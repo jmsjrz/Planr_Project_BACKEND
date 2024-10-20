@@ -34,7 +34,8 @@ INSTALLED_APPS = [
 
     # Applications personnalisées
     'authentication',
-	'events'
+    'events',
+    'profiles',
 ]
 
 # Définition des middlewares
@@ -47,6 +48,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+	'profiles.middleware.EnsureProfileCompleteMiddleware',
 ]
 
 # Configuration des CORS
@@ -139,6 +141,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # Configuration de l'e-mail
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 DEFAULT_FROM_EMAIL = 'no-reply@planr.dev'
+
+# Configuration des fichiers statiques et médias
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Internationalisation
 LANGUAGE_CODE = 'en-us'
