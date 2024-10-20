@@ -1,6 +1,10 @@
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from .models import PrivateEvent, ProfessionalEvent, Service, EventRegistration, Wishlist
+from .utils import process_image
+from PIL import Image
+import io
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -13,6 +17,22 @@ class PrivateEventSerializer(serializers.ModelSerializer):
         model = PrivateEvent
         fields = ['id', 'title', 'description', 'location', 'date', 'time', 'max_participants', 'image']
 
+    def validate_image(self, image):
+        # Valider le type de fichier
+        if not image.content_type.startswith('image/'):
+            raise serializers.ValidationError("Le fichier téléchargé doit être une image.")
+        # Limiter la taille de l'image à 5 MB
+        if image.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("La taille de l'image ne doit pas dépasser 5 MB.")
+        return image
+
+    def save(self, **kwargs):
+        # Redimensionner l'image avant de la sauvegarder
+        image = self.validated_data.get('image')
+        if image:
+            self.validated_data['image'] = process_image(image)  # Utilisation de la fonction dans utils.py
+        return super().save(**kwargs)
+
 
 class ProfessionalEventSerializer(serializers.ModelSerializer):
     services = serializers.PrimaryKeyRelatedField(many=True, queryset=Service.objects.all())
@@ -21,7 +41,14 @@ class ProfessionalEventSerializer(serializers.ModelSerializer):
         model = ProfessionalEvent
         fields = ['id', 'title', 'description', 'location', 'date', 'time', 'max_participants', 'price', 'services', 'image']
 
-from django.contrib.contenttypes.models import ContentType
+    def save(self, **kwargs):
+        # Redimensionner l'image avant de la sauvegarder
+        image = self.validated_data.get('image')
+        if image:
+            self.validated_data['image'] = process_image(image)  # Utilisation de la fonction dans utils.py
+        return super().save(**kwargs)
+
+
 
 class EventRegistrationSerializer(serializers.ModelSerializer):
     event_type = serializers.CharField(write_only=True)  # Pour envoyer le type d'événement (private_event ou professional_event)

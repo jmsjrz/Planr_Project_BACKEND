@@ -9,7 +9,7 @@ class PrivateEventViewSet(viewsets.ModelViewSet):
     queryset = PrivateEvent.objects.all()
     serializer_class = PrivateEventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['location', 'date']
+    filterset_fields = ['location', 'date', 'interests']
     search_fields = ['title', 'description']
     ordering_fields = ['date', 'title']
     permission_classes = [IsAuthenticated]
@@ -20,7 +20,7 @@ class ProfessionalEventViewSet(viewsets.ModelViewSet):
     queryset = ProfessionalEvent.objects.all()
     serializer_class = ProfessionalEventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['location', 'date', 'price']
+    filterset_fields = ['location', 'date', 'price', 'interests']
     search_fields = ['title', 'description']
     ordering_fields = ['date', 'price', 'title']
     permission_classes = [IsAuthenticated]
