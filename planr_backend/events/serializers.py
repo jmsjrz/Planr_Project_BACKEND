@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from .models import PrivateEvent, ProfessionalEvent, Service, EventRegistration, Wishlist
-from .utils import process_image
+from planr_backend.utils import process_image
 from PIL import Image
 import io
 

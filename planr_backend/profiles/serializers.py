@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Interest, Profile
-from .utils import process_image
+from planr_backend.utils import process_image
 
 class InterestSerializer(serializers.ModelSerializer):
     class Meta:

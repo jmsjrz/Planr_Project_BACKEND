@@ -24,6 +24,8 @@ class PrivateEvent(EventBase):
     """ Modèle pour les événements particuliers """
     interests = models.ManyToManyField('profiles.Interest', related_name='private_events', blank=True)
 
+    def __str__(self):
+        return f"{self.title} (Privé)"
 
 class ProfessionalEvent(EventBase):
     """ Modèle pour les événements professionnels """
@@ -33,7 +35,6 @@ class ProfessionalEvent(EventBase):
 
     def __str__(self):
         return f"{self.title} (Professionnel)"
-
 
 class Service(models.Model):
     """ Modèle pour les services associés aux événements professionnels """
@@ -67,8 +68,13 @@ class EventRegistration(models.Model):
         return f"{self.user} inscrit à {self.event}"
 
 class Wishlist(models.Model):
+    """ Wishlist générique reliant à PrivateEvent ou ProfessionalEvent """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    events = models.ManyToManyField('EventBase', related_name='wishlisted_by')
+    
+    # Champs pour la relation générique vers PrivateEvent ou ProfessionalEvent
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    event = GenericForeignKey('content_type', 'object_id')
 
     def __str__(self):
         return f"Wishlist de {self.user}"
