@@ -1,17 +1,21 @@
-from django.shortcuts import redirect
 from django.urls import reverse
+from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
+from django.utils.deprecation import MiddlewareMixin
 
-class EnsureProfileCompleteMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
+class EnsureProfileCompleteMiddleware(MiddlewareMixin):
     def __call__(self, request):
+        # Exclure les URLs d'administration
+        if request.path.startswith(reverse('admin:index')):
+            return self.get_response(request)
+
         # Si l'utilisateur est authentifié
         if request.user.is_authenticated:
             profile = request.user.profile
             # Vérifier si le profil est incomplet
             if not profile.is_profile_complete:
-                # Bloquer l'accès aux autres routes jusqu'à ce que le profil soit complété
-                raise PermissionDenied("Vous devez compléter votre profil avant de continuer.")
+                # Renvoie une réponse JSON avec un statut 403 au lieu de rediriger
+                if request.is_ajax() or request.accepts('application/json'):
+                    return Response({'detail': 'Profile incomplete'}, status=403)
+
         return self.get_response(request)
