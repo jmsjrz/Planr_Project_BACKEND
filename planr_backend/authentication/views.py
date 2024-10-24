@@ -13,8 +13,8 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from django.http import Http404
-from .models import User, PasswordResetAttempt
-from .serializers import UserSerializer
+from .models import User, PasswordResetAttempt, Profile
+from .serializers import UserSerializer, ProfileSerializer
 from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp, send_email
 from .messages import ErrorMessages, SuccessMessages  # Centralisation des messages
 import logging
@@ -361,3 +361,32 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Erreur lors de la réinitialisation du mot de passe : {e}")
             return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ProfileViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def retrieve(self, request):
+        """Récupérer le profil de l'utilisateur connecté."""
+        profile, created = Profile.objects.get_or_create(user=request.user)
+        serializer = ProfileSerializer(profile)
+        return Response(serializer.data)
+
+    def update(self, request):
+        """Mettre à jour le profil de l'utilisateur connecté."""
+        profile, created = Profile.objects.get_or_create(user=request.user)
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CheckProfileCompletionViewSet(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Récupérer le profil de l'utilisateur connecté
+        try:
+            profile = request.user.profile
+            return Response({'is_profile_complete': profile.is_profile_complete})
+        except Profile.DoesNotExist:
+            return Response({'is_profile_complete': False}, status=status.HTTP_200_OK)

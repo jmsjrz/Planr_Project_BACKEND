@@ -10,6 +10,5 @@ router.register(r'users', UserViewSet, basename='user')
 urlpatterns = [
     path('', include('authentication.urls')),
     path('', include('events.urls')),
-    path('', include('profiles.urls')),
     path('admin/', admin.site.urls),
 ]

@@ -35,7 +35,6 @@ INSTALLED_APPS = [
     # Applications personnalisées
     'authentication',
     'events',
-    'profiles',
 ]
 
 # Définition des middlewares
@@ -48,7 +47,6 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-	'profiles.middleware.EnsureProfileCompleteMiddleware',
 ]
 
 # Configuration des CORS

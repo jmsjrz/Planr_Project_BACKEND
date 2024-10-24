@@ -22,7 +22,7 @@ class EventBase(models.Model):
 
 class PrivateEvent(EventBase):
     """ Modèle pour les événements particuliers """
-    interests = models.ManyToManyField('profiles.Interest', related_name='private_events', blank=True)
+    interests = models.ManyToManyField('authentication.Interest', related_name='private_events', blank=True)
 
     def __str__(self):
         return f"{self.title} (Privé)"
@@ -31,7 +31,7 @@ class ProfessionalEvent(EventBase):
     """ Modèle pour les événements professionnels """
     price = models.DecimalField(max_digits=10, decimal_places=2)
     services = models.ManyToManyField('Service', related_name='professional_events')
-    interests = models.ManyToManyField('profiles.Interest', related_name='professional_events', blank=True)
+    interests = models.ManyToManyField('authentication.Interest', related_name='professional_events', blank=True)
 
     def __str__(self):
         return f"{self.title} (Professionnel)"

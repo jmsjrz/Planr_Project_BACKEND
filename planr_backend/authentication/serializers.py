@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, Profile, Interest
+from planr_backend.utils import process_image
 
 class UserSerializer(serializers.ModelSerializer):
     """
@@ -24,3 +25,22 @@ class UserSerializer(serializers.ModelSerializer):
         if value and not value.isdigit():
             raise serializers.ValidationError("Le numéro de téléphone doit contenir uniquement des chiffres.")
         return value
+
+class InterestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Interest
+        fields = ['id', 'name']
+
+class ProfileSerializer(serializers.ModelSerializer):
+    interests = InterestSerializer(many=True, read_only=True)
+    profile_picture = serializers.ImageField(required=False)
+
+    class Meta:
+        model = Profile
+        fields = ['first_name', 'birth_date', 'gender', 'interests', 'profile_picture']
+
+    def update(self, instance, validated_data):
+        # Traitement spécial pour l'image
+        if 'profile_picture' in validated_data:
+            validated_data['profile_picture'] = process_image(validated_data['profile_picture'])
+        return super().update(instance, validated_data)

@@ -1,8 +1,12 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from django.core.validators import FileExtensionValidator
+from django.utils.translation import gettext_lazy as _
 from .messages import ErrorMessages, SuccessMessages
 from datetime import timedelta
+import planr_backend.settings as settings
+from planr_backend.utils import process_image
 import uuid
 import hashlib
 
@@ -82,3 +86,36 @@ class PasswordResetAttempt(models.Model):
 
     def __str__(self):
         return f"Tentative de réinitialisation de {self.user.email if self.user.email else self.user.phone_number} à {self.requested_at}"
+
+class Interest(models.Model):
+    name = models.CharField(max_length=500, unique=True)
+
+    def __str__(self):
+        return self.name
+
+class Profile(models.Model):
+    GENDER_CHOICES = [
+        ('male', 'Homme'),
+        ('female', 'Femme'),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
+    first_name = models.CharField(max_length=50, blank=True, null=True)
+    birth_date = models.DateField(blank=True, null=True)
+    gender = models.CharField(max_length=6, choices=GENDER_CHOICES, blank=True, null=True)
+    interests = models.ManyToManyField(Interest, blank=True)
+    profile_picture = models.ImageField(upload_to='profiles/', validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])], blank=True, null=True)
+    is_profile_complete = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Profil de {self.user.email or self.user.phone_number}"
+
+    def save(self, *args, **kwargs):
+        if self.first_name and self.birth_date and self.gender:
+            self.is_profile_complete = True
+        else:
+            self.is_profile_complete = False
+        
+        if self.profile_picture:
+            self.profile_picture = process_image(self.profile_picture)
+        super().save(*args, **kwargs)
