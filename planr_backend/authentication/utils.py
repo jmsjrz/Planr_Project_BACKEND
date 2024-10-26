@@ -4,7 +4,9 @@ from django.core.mail import send_mail
 import logging
 from django.conf import settings
 
+
 logger = logging.getLogger(__name__)
+
 
 def generate_and_hash_otp():
     """
@@ -16,6 +18,7 @@ def generate_and_hash_otp():
     otp = '123456' if settings.DEBUG else ''.join([str(random.randint(0, 9)) for _ in range(6)])  # OTP fixe si DEBUG
     hashed_otp = hashlib.sha256(otp.encode('utf-8')).hexdigest()  # Hachage de l'OTP avec SHA256
     return otp, hashed_otp
+
 
 def send_email(subject, message, recipient_list):
     """
@@ -38,6 +41,7 @@ def send_email(subject, message, recipient_list):
     except Exception as e:
         logger.error(f"Erreur lors de l'envoi de l'e-mail à {', '.join(recipient_list)}: {e}")
 
+
 def send_email_otp(email, otp):
     """
     Envoie un code OTP par e-mail à l'utilisateur.
@@ -47,6 +51,7 @@ def send_email_otp(email, otp):
         otp (str): Le code OTP à envoyer.
     """
     send_email('Votre code de vérification', f'Votre code de vérification est : {otp}', [email])
+
 
 def send_sms_otp(phone_number, otp):
     """
@@ -58,6 +63,7 @@ def send_sms_otp(phone_number, otp):
     """
     # Simuler l'envoi d'un SMS. En production, intégrer un service comme Twilio ou Nexmo
     logger.info(f"Code OTP envoyé au numéro {phone_number}: {otp}")
+
 
 def send_login_alert(email, ip_address, user_agent):
     """

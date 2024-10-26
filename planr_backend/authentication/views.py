@@ -14,12 +14,14 @@ from django.conf import settings
 from datetime import timedelta
 from django.http import Http404
 from .models import User, PasswordResetAttempt, Profile
-from .serializers import UserSerializer, ProfileSerializer
+from .serializers import PrivateUserSerializer, PublicUserSerializer, PrivateProfileSerializer
 from .utils import generate_and_hash_otp, send_email_otp, send_sms_otp, send_email
 from .messages import ErrorMessages, SuccessMessages  # Centralisation des messages
 import logging
 
+
 logger = logging.getLogger(__name__)
+
 
 class InactiveUserJWTAuthentication(JWTAuthentication):
     def get_user(self, validated_token):
@@ -38,7 +40,7 @@ class InactiveUserJWTAuthentication(JWTAuthentication):
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    serializer_class = UserSerializer
+    serializer_class = PrivateUserSerializer
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
@@ -362,23 +364,25 @@ class UserViewSet(viewsets.ModelViewSet):
             logger.error(f"Erreur lors de la réinitialisation du mot de passe : {e}")
             return Response({'error': ErrorMessages.UNAUTHORIZED_ACCESS}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 class ProfileViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def retrieve(self, request):
         """Récupérer le profil de l'utilisateur connecté."""
         profile, created = Profile.objects.get_or_create(user=request.user)
-        serializer = ProfileSerializer(profile)
+        serializer = PrivateProfileSerializer(profile)
         return Response(serializer.data)
 
     def update(self, request):
         """Mettre à jour le profil de l'utilisateur connecté."""
         profile, created = Profile.objects.get_or_create(user=request.user)
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        serializer = PrivateProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class CheckProfileCompletionViewSet(APIView):
     permission_classes = [IsAuthenticated]

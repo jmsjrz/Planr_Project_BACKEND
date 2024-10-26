@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import PasswordResetAttempt, Profile, Interest
 
+
 @admin.register(PasswordResetAttempt)
 class PasswordResetAttemptAdmin(admin.ModelAdmin):
     list_display = ('user', 'requested_at', 'ip_address', 'user_agent')

@@ -10,6 +10,7 @@ from planr_backend.utils import process_image
 import uuid
 import hashlib
 
+
 class UserManager(BaseUserManager):
     def create_user(self, email=None, phone_number=None, password=None, **extra_fields):
         if not email and not phone_number:
@@ -32,6 +33,7 @@ class UserManager(BaseUserManager):
             raise ValueError('Le superutilisateur doit avoir is_superuser=True.')
 
         return self.create_user(email=email, password=password, **extra_fields)
+
 
 class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True, null=True, blank=True)
@@ -78,6 +80,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     def is_account_locked(self):
         return self.locked_until and timezone.now() < self.locked_until
 
+
 class PasswordResetAttempt(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reset_attempts')
     requested_at = models.DateTimeField(auto_now_add=True)
@@ -87,11 +90,13 @@ class PasswordResetAttempt(models.Model):
     def __str__(self):
         return f"Tentative de réinitialisation de {self.user.email if self.user.email else self.user.phone_number} à {self.requested_at}"
 
+
 class Interest(models.Model):
     name = models.CharField(max_length=500, unique=True)
 
     def __str__(self):
         return self.name
+
 
 class Profile(models.Model):
     GENDER_CHOICES = [
