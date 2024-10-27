@@ -82,5 +82,6 @@ class PublicProfileSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Profile
-        fields = ['first_name', 'profile_picture']  # Les champs que tu souhaites exposer
+        fields = ['first_name', 'profile_picture']
+
 

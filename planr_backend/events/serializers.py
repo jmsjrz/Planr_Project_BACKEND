@@ -4,14 +4,17 @@ from .models import PrivateEvent, EventRegistration, Wishlist
 from planr_backend.utils import process_image
 from authentication.serializers import PublicProfileSerializer
 from PIL import Image
+from datetime import datetime
 import io
 
 
 class PrivateEventSerializer(serializers.ModelSerializer):
     """ Serializer pour les événements privés. """
-    organizer = PublicProfileSerializer(source='organizer.profile', read_only=True) 
-    participants = PublicProfileSerializer(many=True, read_only=True)  
+    organizer = PublicProfileSerializer(source='organizer.profile', read_only=True)
+    participants = serializers.SerializerMethodField()
     wishlist_count = serializers.SerializerMethodField()
+    is_wishlisted = serializers.SerializerMethodField()
+    is_registered = serializers.SerializerMethodField()
 
     class Meta:
         model = PrivateEvent
@@ -26,12 +29,48 @@ class PrivateEventSerializer(serializers.ModelSerializer):
             'image',
             'organizer',
             'participants',
-            'wishlist_count'
+            'wishlist_count',
+            'is_wishlisted',
+            'is_registered'
         ]
     
     def get_wishlist_count(self, obj):
         """ Calcule le nombre de fois que cet événement a été ajouté à la wishlist. """
         return Wishlist.objects.filter(event=obj).count()
+
+    def get_is_wishlisted(self, obj):
+        """ Vérifie si l'utilisateur actuel a ajouté cet événement à sa wishlist. """
+        user = self.context['request'].user  # Récupère l'utilisateur courant
+        if not user.is_authenticated:
+            return False  # Si l'utilisateur n'est pas authentifié, retourne False
+        return Wishlist.objects.filter(user=user, event=obj).exists()
+
+    def get_is_registered(self, obj):
+        """ Vérifie si l'utilisateur actuel est inscrit à cet événement. """
+        user = self.context['request'].user  # Récupère l'utilisateur courant
+        if not user.is_authenticated:
+            return False  # Si l'utilisateur n'est pas authentifié, retourne False
+        return EventRegistration.objects.filter(user=user, event=obj).exists()
+    
+    def get_participants(self, obj):
+        """ Retourne les participants avec un chemin complet pour leur photo de profil """
+        request = self.context.get('request')
+        participants = obj.participants.all()
+        
+        serialized_participants = []
+        for participant in participants:
+            profile = participant.profile
+            profile_picture_url = profile.profile_picture.url if profile.profile_picture else '/default-avatar.png'
+            
+            if request:
+                profile_picture_url = request.build_absolute_uri(profile_picture_url)
+            
+            serialized_participants.append({
+                'firstName': profile.first_name,
+                'profilePicture': profile_picture_url
+            })
+        
+        return serialized_participants
 
     def validate_image(self, image):
         """ Valide que le fichier est bien une image et limite la taille à 5 MB. """
@@ -50,7 +89,6 @@ class PrivateEventSerializer(serializers.ModelSerializer):
 
 
 class EventRegistrationSerializer(serializers.ModelSerializer):
-    """ Serializer pour l'inscription à un événement privé. """
     event_id = serializers.IntegerField(write_only=True)  # ID de l'événement.
 
     class Meta:
@@ -67,19 +105,23 @@ class EventRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Vous êtes déjà inscrit à cet événement.")
 
         event = PrivateEvent.objects.get(id=event_id)
+
         if event.participants.count() >= event.max_participants:
             raise serializers.ValidationError("L'événement a atteint le nombre maximum de participants.")
+
+        event_start = datetime.combine(event.date, event.time)
+        if event_start <= datetime.now():
+            raise serializers.ValidationError("Il n'est plus possible de s'inscrire à cet événement car il a déjà commencé.")
 
         return data
 
     def create(self, validated_data):
         """ Crée une nouvelle inscription à un événement privé. """
         event_id = validated_data.pop('event_id')
-
+        user = self.context['request'].user
         registration = EventRegistration.objects.create(
-            user=self.context['request'].user,
+            user=user,
             event_id=event_id,
-            **validated_data
         )
         return registration
 
