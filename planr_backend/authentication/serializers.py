@@ -60,10 +60,12 @@ class PrivateProfileSerializer(serializers.ModelSerializer):
     """
     interests = InterestSerializer(many=True, read_only=True)
     profile_picture = serializers.ImageField(required=False)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    phone_number = serializers.CharField(source='user.phone_number', required=False)
 
     class Meta:
         model = Profile
-        fields = ['first_name', 'birth_date', 'gender', 'interests', 'profile_picture']
+        fields = ['first_name', 'birth_date', 'gender', 'interests', 'profile_picture', 'email', 'phone_number']
         read_only_fields = ['profile_picture']
 
     def update(self, instance, validated_data):
