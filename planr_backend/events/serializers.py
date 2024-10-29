@@ -11,6 +11,8 @@ import io
 class PrivateEventSerializer(serializers.ModelSerializer):
     """ Serializer pour les événements privés. """
     organizer = PublicProfileSerializer(source='organizer.profile', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    category = serializers.CharField(write_only=True)
     participants = serializers.SerializerMethodField()
     wishlist_count = serializers.SerializerMethodField()
     is_wishlisted = serializers.SerializerMethodField()
@@ -31,7 +33,9 @@ class PrivateEventSerializer(serializers.ModelSerializer):
             'participants',
             'wishlist_count',
             'is_wishlisted',
-            'is_registered'
+            'is_registered',
+            'category',
+            'category_display'
         ]
     
     def get_wishlist_count(self, obj):

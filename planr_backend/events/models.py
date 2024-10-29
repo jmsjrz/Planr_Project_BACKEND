@@ -23,12 +23,27 @@ class EventBase(models.Model):
 
 class PrivateEvent(EventBase):
     """ Modèle pour les événements particuliers """
+    
+    CATEGORY_CHOICES = [
+        ('CONF', 'Conférences'),
+        ('WORK', 'Ateliers'),
+        ('FEST', 'Festivals'),
+        ('SPORT', 'Sport'),
+        ('PARTY', 'Soirées'),
+        ('EXPO', 'Expositions'),
+        ('TRIP', 'Excursions'),
+        ('CHAR', 'Événements caritatifs'),
+        ('PROF', 'Rencontres professionnelles'),
+        ('FAM', 'Famille et Enfants'),
+    ]
+    
     organizer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='private_events')
     interests = models.ManyToManyField('authentication.Interest', related_name='private_events', blank=True)
     participants = models.ManyToManyField(get_user_model(), related_name='participating_private_events', blank=True)
+    category = models.CharField(max_length=5, choices=CATEGORY_CHOICES)
 
     def __str__(self):
-        return f"{self.title} (Privé)"
+        return f"{self.title} (Privé) - {self.get_category_display()}"
 
 
 class EventRegistration(models.Model):
