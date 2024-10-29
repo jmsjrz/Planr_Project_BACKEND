@@ -14,8 +14,8 @@ class PrivateEventViewSet(viewsets.ModelViewSet):
     serializer_class = PrivateEventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['location', 'date', 'interests']
-    search_fields = ['title', 'description']
-    ordering_fields = ['date', 'title']
+    search_fields = ['title', 'description', 'location']
+    ordering_fields = ['date', 'category']
     permission_classes = [IsAuthenticated]  # Permission par défaut pour toutes les actions
       
     def get_permissions(self):
