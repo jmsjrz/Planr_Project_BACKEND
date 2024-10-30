@@ -25,6 +25,8 @@ class PrivateEventSerializer(serializers.ModelSerializer):
             'title', 
             'description', 
             'location', 
+            'latitude',
+            'longitude',
             'date', 
             'time', 
             'max_participants', 
