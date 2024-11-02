@@ -28,6 +28,29 @@ class PrivateEventViewSet(viewsets.ModelViewSet):
         # Assigne l'utilisateur connecté comme organisateur
         serializer.save(organizer=self.request.user)
 
+    @action(detail=False, methods=['get'], url_path='my-wishlist')
+    def my_wishlist(self, request):
+        """ Retourne les événements ajoutés à la wishlist de l'utilisateur connecté """
+        user = request.user
+        wishlist_events = PrivateEvent.objects.filter(wishlists__user=user).select_related('organizer').prefetch_related('participants__profile')
+        serializer = self.get_serializer(wishlist_events, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='my-events')
+    def my_events(self, request):
+        """ Retourne les événements créés par l'utilisateur connecté """
+        user = request.user
+        my_events = PrivateEvent.objects.filter(organizer=user).select_related('organizer').prefetch_related('participants__profile')
+        serializer = self.get_serializer(my_events, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='joined-events')
+    def joined_events(self, request):
+        """ Retourne les événements auxquels l'utilisateur est inscrit """
+        user = request.user
+        joined_events = PrivateEvent.objects.filter(participants=user).select_related('organizer').prefetch_related('participants__profile')
+        serializer = self.get_serializer(joined_events, many=True)
+        return Response(serializer.data)
 
 class IsOrganizer(permissions.BasePermission):
     """ Permission pour vérifier que l'utilisateur est l'organisateur de l'événement. """
