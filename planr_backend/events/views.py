@@ -10,13 +10,13 @@ from .serializers import PrivateEventSerializer, EventRegistrationSerializer, Wi
 
 class PrivateEventViewSet(viewsets.ModelViewSet):
     """ ViewSet pour gérer les événements particuliers """
-    queryset = PrivateEvent.objects.all().select_related('organizer').prefetch_related('participants__profile')
+    queryset = PrivateEvent.objects.all().select_related('organizer').prefetch_related('participants__profile').filter(date__gte=timezone.now())
     serializer_class = PrivateEventSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['location', 'date', 'interests']
     search_fields = ['title', 'description', 'location']
     ordering_fields = ['date', 'category']
-    permission_classes = [IsAuthenticated]  # Permission par défaut pour toutes les actions
+    permission_classes = [IsAuthenticated]
       
     def get_permissions(self):
         """ Applique des permissions différentes selon les actions. """
